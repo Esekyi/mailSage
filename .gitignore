@@ -1,0 +1,8 @@
+setup.md
+.env
+.venv/
+__pycache__/
+.vscode/
+logs/
+.env.bak
+.cursorrules
