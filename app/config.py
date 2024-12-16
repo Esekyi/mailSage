@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 import logging
+from datetime import timedelta
 
 load_dotenv()
 
@@ -9,6 +10,9 @@ class Config:
     """Set Flask configuration vars from .env file."""
     SECRETE_KEY = os.getenv(
         'SECRETE_KEY', 'Supersecret-tiny-littel-bit-secret-key')
+    JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key')
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=1)
     SQLALCHEMY_DATABASE_URI = os.getenv(
         'DATABASE_URL',
         'postgresql://user:password@localhost:5432/mailsage_db')
@@ -42,6 +46,7 @@ class DevConfig(Config):
 class ProdConfig(Config):
     DEBUG = False
     LOG_LEVEL = logging.WARNING
+    SERVER_NAME = 'mailsage.com'
 
 
 class TestConfig(Config):

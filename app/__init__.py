@@ -14,14 +14,14 @@ def create_app(config_class=DevConfig):
     app.config.from_object(config_class)
 
     db.init_app(app)
+    jwt = JWTManager(app)
 
     # Initialize extensions db, migrate, celery, jwt
     from app.models import User, AuditLog, EmailDelivery, Template, EmailJob, \
         APIKey
 
     migrate.init_app(app, db)
-
-    jwt = JWTManager(app)
+    jwt.init_app(app)
 
     app.logger = setup_logger(
         name=app.name,
@@ -35,8 +35,8 @@ def create_app(config_class=DevConfig):
     celery.conf.update(CELERY_CONFIG)
 
     # Register blueprints
-    # from app.routes import auth, templates, send, admin
-    # app.register_blueprint(auth.bp)
+    from app.api import auth, templates, send
+    app.register_blueprint(auth.auth_bp)
     # app.register_blueprint(templates.bp)
     # app.register_blueprint(send.bp)
     # app.register_blueprint(admin.bp)
