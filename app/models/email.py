@@ -1,5 +1,6 @@
 from .base import BaseModel, AuditMixin
 from app.extensions import db
+from sqlalchemy.sql.sqltypes import TIMESTAMP
 
 
 class EmailJob(BaseModel, AuditMixin):
@@ -39,6 +40,6 @@ class EmailDelivery(BaseModel):
     tracking_id = db.Column(db.String(36), unique=True, nullable=False)
 
     # Tracking
-    opened_at = db.Column(db.DateTime, nullable=True)
-    clicked_at = db.Column(db.DateTime, nullable=True)
+    opened_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
+    clicked_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
     error_message = db.Column(db.Text, nullable=True)
