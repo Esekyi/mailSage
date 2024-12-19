@@ -10,16 +10,13 @@ import logging
 
 def create_app(config_class=DevConfig):
     """Create and configure the app factory to flask app"""
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder='../templates')
     app.config.from_object(config_class)
 
     db.init_app(app)
     jwt = JWTManager(app)
 
     # Initialize extensions db, migrate, celery, jwt
-    from app.models import User, AuditLog, EmailDelivery, Template, EmailJob, \
-        APIKey
-
     migrate.init_app(app, db)
     jwt.init_app(app)
 
@@ -35,10 +32,12 @@ def create_app(config_class=DevConfig):
     celery.conf.update(CELERY_CONFIG)
 
     # Register blueprints
-    from app.api import auth, templates, send
+    from app.api import auth, templates, analytics, send
+    from app.routes import admin
     app.register_blueprint(auth.auth_bp)
-    # app.register_blueprint(templates.bp)
-    # app.register_blueprint(send.bp)
-    # app.register_blueprint(admin.bp)
+    app.register_blueprint(templates.templates_bp)
+    app.register_blueprint(analytics.analytics_bp)
+    app.register_blueprint(send.send_bp)
+    app.register_blueprint(admin.admin_bp)
 
     return app

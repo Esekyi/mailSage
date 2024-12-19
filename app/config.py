@@ -51,6 +51,12 @@ class ProdConfig(Config):
 
 class TestConfig(Config):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'  # For tests
+    TESTING = True
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        'TEST_DATABASE_URL',
+        'postgresql://user:password@localhost:5432/mailsage_test')
     LOG_FILE = None
     LOG_LEVEL = logging.ERROR
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    JWT_SECRET_KEY = 'test-secret-key'
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(days=1)
