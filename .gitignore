@@ -7,3 +7,5 @@ logs/
 .env.bak
 .cursorrules
 dump.rdb
+.DS_Store
+.pytest_cache/
