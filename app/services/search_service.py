@@ -1,20 +1,30 @@
-from typing import List
-from sqlalchemy import func
+from flask import current_app
+from sqlalchemy import func, or_
 from app.models import Template
 
 
 class TemplateSearchService:
     @staticmethod
-    def search_templates(query: str, user_id: int = None) -> List[Template]:
-        """Search templates using full-text search."""
-        search_query = Template.query.filter(
-            Template.search_vector.match(query)
-        )
-
-        if user_id is not None:
-            search_query = search_query.filter_by(user_id=user_id)
-
-        return search_query.all()
+    def search_templates(query: str, user_id: int):
+        """Search templates with database-appropriate search strategy."""
+        if current_app.config['SQLALCHEMY_DATABASE_URI'
+                              ].startswith('postgresql'):
+            # Use PostgreSQL full-text search
+            return Template.query.filter(
+                Template.user_id == user_id,
+                Template.search_vector.match(query)
+            ).all()
+        else:
+            # Fallback to LIKE search for SQLite
+            search_term = f"%{query}%"
+            return Template.query.filter(
+                Template.user_id == user_id,
+                or_(
+                    Template.name.ilike(search_term),
+                    Template.description.ilike(search_term),
+                    Template.html_content.ilike(search_term)
+                )
+            ).all()
 
     @staticmethod
     def update_search_vector(template: Template) -> None:
@@ -25,4 +35,9 @@ class TemplateSearchService:
             template.html_content
         ]))
 
-        template.search_vector = func.to_tsvector('english', search_text)
+        if current_app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql'):
+            # Use PostgreSQL full-text search
+            template.search_vector = func.to_tsvector('english', search_text)
+        else:
+            # For other databases, store search text directly
+            template.search_vector = search_text

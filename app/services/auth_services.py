@@ -2,12 +2,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 import secrets
 import hashlib
-from flask_jwt_extended import create_access_token
+from flask_jwt_extended import create_access_token, create_refresh_token
 from app.models import APIKey, User
 from app.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import current_app, render_template
 from app.services.mail_service import MailService
+from app.services.verification_service import VerificationService
 
 
 class AuthenticationService:
@@ -30,11 +31,17 @@ class AuthenticationService:
                 email=email,
                 password_hash=generate_password_hash(password),
                 role=role,
-                is_active=True
+                is_active=True,
+                email_verified=False
             )
 
             db.session.add(user)
             db.session.flush()  # Trigger the audit log
+
+            # Send verification email
+            if not VerificationService.send_verification_email(user):
+                db.session.rollback()
+                raise ValueError('Failed to send verification email')
 
             db.session.commit()  # Commit the transaction
 
@@ -47,17 +54,71 @@ class AuthenticationService:
             raise e  # Re-raise the exception to be handled by the route/view
 
     @staticmethod
+    def generate_tokens(user_id: int) -> dict:
+        """Generate both access and refresh tokens."""
+        access_token = create_access_token(identity=str(user_id))
+        refresh_token = create_refresh_token(identity=str(user_id))
+
+        # Store refresh token in database
+        user = db.session.get(User, user_id)
+        hashed_refresh_token = hashlib.sha256(
+            refresh_token.encode()
+        ).hexdigest()
+        user.refresh_token = hashed_refresh_token
+        user.refresh_token_expires = datetime.now(
+            timezone.utc) + timedelta(days=30)
+        db.session.commit()
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer"
+        }
+
+    @staticmethod
+    def refresh_access_token(refresh_token: str) -> dict:
+        """Generate new access token using refresh token."""
+        hashed_refresh_token = hashlib.sha256(
+            refresh_token.encode()
+        ).hexdigest()
+
+        user = User.query.filter_by(
+            refresh_token=hashed_refresh_token,
+            is_active=True
+        ).first()
+
+        if not user or not user.refresh_token_expires:
+            raise ValueError('Invalid refresh token')
+
+        if user.refresh_token_expires < datetime.now(timezone.utc):
+            user.refresh_token = None
+            user.refresh_token_expires = None
+            db.session.commit()
+            raise ValueError('Refresh token expired')
+
+        tokens = AuthenticationService.generate_tokens(user.id)
+
+        return tokens
+
+    @staticmethod
     def authenticate_user(email: str, password: str) -> Tuple[User, str]:
         """Authenticate user and return user object with access token."""
         user = User.query.filter_by(email=email, is_active=True).first()
 
-        if not user or not check_password_hash(user.password_hash, password):
+        if not user:
+            raise ValueError('Invalid email or password')
+
+        if not user.email_verified:
+            raise ValueError('Email not verified. Please verify your email \
+                before logging in.')
+
+        if not check_password_hash(user.password_hash, password):
             raise ValueError('Invalid email or password')
 
         # create access token
-        access_token = create_access_token(identity=str(user.id))
+        tokens = AuthenticationService.generate_tokens(user.id)
 
-        return user, access_token
+        return user, tokens
 
     @staticmethod
     def generate_password_reset_token(user: User) -> str:
