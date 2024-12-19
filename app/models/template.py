@@ -2,8 +2,8 @@ from .base import BaseModel, SoftDeleteMixin, AuditMixin
 from app.extensions import db
 from typing import Dict, Any
 from app.models.mixins import SerializationMixin, AdminQueryMixin
-from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy import event
+from app.utils.db import TSVectorType
 
 
 class Template(BaseModel, SoftDeleteMixin, AuditMixin,
@@ -14,11 +14,12 @@ class Template(BaseModel, SoftDeleteMixin, AuditMixin,
         'users.id', ondelete='CASCADE'),
         nullable=False, index=True)
     name = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.Text, nullable=True)
     html_content = db.Column(db.Text, nullable=False)
     variables = db.Column(db.JSON, default=dict)
     version = db.Column(db.Integer, default=1)
     is_active = db.Column(db.Boolean, default=True, index=True)
-    search_vector = db.Column(TSVECTOR)
+    search_vector = db.Column(TSVectorType)
 
     __table_args__ = (
         db.Index(

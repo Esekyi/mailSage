@@ -16,7 +16,7 @@ class EmailJob(BaseModel, AuditMixin):
         nullable=False, index=True)
     template_id = db.Column(db.Integer, db.ForeignKey(
         'templates.id'), nullable=True)
-    subject = db.Column(db.String(255), nullable=False)
+    subject = db.Column(db.String(255), nullable=False, default='No Subject')
     status = db.Column(db.String(20), default=STATUS_PENDING, index=True)
 
     # Metrics

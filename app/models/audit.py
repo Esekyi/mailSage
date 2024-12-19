@@ -1,10 +1,10 @@
 from datetime import datetime, timezone, date
 from sqlalchemy import event
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import RelationshipProperty
 from sqlalchemy.orm.dynamic import AppenderQuery
 from app.extensions import db
 from sqlalchemy.sql.sqltypes import TIMESTAMP
+from app.utils.db import JSONBType
 
 
 def serialize_value(value):
@@ -26,7 +26,7 @@ class AuditLog(db.Model):
     model_name = db.Column(db.String(50), nullable=False)
     record_id = db.Column(db.Integer, nullable=False)
     operation = db.Column(db.String(10), nullable=False)
-    changes = db.Column(JSONB)
+    changes = db.Column(JSONBType)
     user_id = db.Column(db.Integer, nullable=True)
     timestamp = db.Column(TIMESTAMP(timezone=True),
                           default=datetime.now(timezone.utc)
