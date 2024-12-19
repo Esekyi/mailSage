@@ -3,6 +3,11 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import Schema, validate, fields
 from app.services.auth_services import AuthenticationService
 from app.models import APIKey
+from app.services.verification_service import VerificationService
+from app.utils.decorators import require_verified_email
+from app.extensions import db
+from app.utils.roles import ResourceLimit
+from app.utils.decorators import check_resource_limits
 
 
 # Schema definitions from marshmallow
@@ -63,6 +68,65 @@ def register():
         return jsonify({'error': 'An unexpected error occurred'}), 500
 
 
+@auth_bp.route('/verify-email', methods=['POST'])
+def verify_email():
+    """Verify user's email using token."""
+    token = request.json.get('token')
+    if not token:
+        return jsonify({"error": "Verification token is required"}), 400
+
+    user = VerificationService.verify_email(token)
+    if not user:
+        return jsonify({"error": "Invalid or expired verification token"}), 400
+
+    return jsonify({
+        "message": "Email verified successfully",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "email_verified": user.email_verified
+        }
+    }), 200
+
+
+@auth_bp.route('/resend-verification', methods=['POST'])
+@jwt_required()
+def resend_verification():
+    """Resend verification email to user."""
+    user_id = get_jwt_identity()
+    user = db.session.get(user_id)
+
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+
+    if user.email_verified:
+        return jsonify({"error": "Email already verified"}), 400
+
+    success = VerificationService.resend_verification_email(user)
+    if not success:
+        return jsonify({"error": "Failed to send verification email"}), 500
+
+    return jsonify({
+        "message": "Verification email resent successfully"
+    }), 200
+
+
+@auth_bp.route('/refresh', methods=['POST'])
+def refresh_token():
+    """Generate new access token using refresh token."""
+    refresh_token = request.json.get('refresh_token')
+    if not refresh_token:
+        return jsonify({"error": "Refresh token is required"}), 400
+
+    try:
+        # Generate new access token
+        tokens = AuthenticationService.refresh_access_token(refresh_token)
+        return jsonify({'access_token': tokens['access_token']}), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 401
+
+
 @auth_bp.route('/login', methods=['POST'])
 def login():
     """Authenticate user and return token."""
@@ -73,12 +137,14 @@ def login():
         return jsonify({"error": str(e)}), 400
 
     try:
-        user, token = AuthenticationService.authenticate_user(
+        user, tokens = AuthenticationService.authenticate_user(
             email=data['email'],
             password=data['password']
         )
         return jsonify({
-            "access_token": token,
+            "access_token": tokens['access_token'],
+            "refresh_token": tokens['refresh_token'],
+            "token_type": tokens['token_type'],
             "user": {
                 "id": user.id,
                 "email": user.email,
@@ -87,7 +153,13 @@ def login():
         }), 200
 
     except ValueError as e:
-        return jsonify({'error': str(e)}), 401
+        if "Email not verified" in str(e):
+            # Suggest the user to verify their email
+            return jsonify({
+                "error": str(e),
+                "resend_verification_link": "/api/v1/auth/resend-verification"
+            }), 403
+        return jsonify({"error": str(e)}), 401
 
 
 @auth_bp.route('/password-reset', methods=['POST'])
@@ -130,6 +202,8 @@ def reset_password():
 
 @auth_bp.route('/api-keys', methods=['POST'])
 @jwt_required()
+@require_verified_email
+@check_resource_limits(ResourceLimit.API_KEYS)
 def create_api_key():
     """Generate a new API key for the authenticated user."""
     schema = APIKeySchema()
@@ -155,6 +229,7 @@ def create_api_key():
 
 @auth_bp.route('/api-keys', methods=['GET'])
 @jwt_required()
+@require_verified_email
 def list_api_keys():
     """List all active API keys for the authenticated user."""
     user_id = get_jwt_identity()
@@ -178,6 +253,7 @@ def list_api_keys():
 
 @auth_bp.route('/api-keys/<int:key_id>', methods=['DELETE'])
 @jwt_required()
+@require_verified_email
 def revoke_api_key(key_id):
     """Revoke an API key."""
     user_id = get_jwt_identity()
