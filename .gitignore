@@ -1,4 +1,5 @@
 setup.md
+setup-frontend.md
 .env
 .venv/
 __pycache__/
