@@ -14,8 +14,7 @@ def test_template_limits(client, auth_headers):
         if i < 5:
             assert response.status_code == 201, f"Failed on template {i}"
         else:
-            assert response.status_code == 403, "Should fail after limit \
-                reached"
+            assert response.status_code == 403, "Should fail after limit reached"
 
 
 def test_api_key_limits(client, auth_headers):

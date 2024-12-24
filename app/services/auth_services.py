@@ -13,7 +13,7 @@ from app.services.verification_service import VerificationService
 
 class AuthenticationService:
     @staticmethod
-    def register_user(email: str, password: str,
+    def register_user(email: str, password: str, name: str,
                       role: str = 'free') -> Tuple[User, str]:
         """Register a new user and return the user object with access token."""
         db.session.begin_nested()  # Create a savepoint
@@ -30,6 +30,7 @@ class AuthenticationService:
             user = User(
                 email=email,
                 password_hash=generate_password_hash(password),
+                name=name,
                 role=role,
                 is_active=True,
                 email_verified=False
@@ -41,7 +42,8 @@ class AuthenticationService:
             # Send verification email
             if not VerificationService.send_verification_email(user):
                 db.session.rollback()
-                raise ValueError('Failed to send verification email')
+                raise ValueError(
+                    "Registration successful but failed to send verification email. Please try resending the verification email.")
 
             db.session.commit()  # Commit the transaction
 
@@ -51,6 +53,7 @@ class AuthenticationService:
             return user, access_token
         except Exception as e:
             db.session.rollback()  # Roll back the entire transaction
+            current_app.logger.error(f"Registration error: {str(e)}")
             raise e  # Re-raise the exception to be handled by the route/view
 
     @staticmethod
@@ -109,8 +112,7 @@ class AuthenticationService:
             raise ValueError('Invalid email or password')
 
         if not user.email_verified:
-            raise ValueError('Email not verified. Please verify your email \
-                before logging in.')
+            raise ValueError('Email not verified. Please verify your email before logging in.')
 
         if not check_password_hash(user.password_hash, password):
             raise ValueError('Invalid email or password')
