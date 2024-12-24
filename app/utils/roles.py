@@ -13,6 +13,7 @@ class Permission(Enum):
     MANAGE_WEBHOOKS = "manage_webhooks"
     ACCESS_ADMIN = "access_admin"
     MANAGE_USERS = "manage_users"
+    MANAGE_SMTP = "manage_smtp"
 
 
 class UserRole(Enum):
@@ -30,6 +31,7 @@ class ResourceLimit(Enum):
     TEMPLATE_SIZE = "template_size"
     MAX_RECIPIENTS = "max_recipients"
     WEBHOOK_ENDPOINTS = "webhook_endpoints"
+    SMTPCONFIGS = "smtp_configs"
 
 
 ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
@@ -39,15 +41,17 @@ ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
             Permission.WRITE_TEMPLATES.value,
             Permission.SEND_EMAILS.value,
             Permission.MANAGE_API_KEYS.value,
+            Permission.MANAGE_SMTP.value,
         ],
         'limits': {
             ResourceLimit.TEMPLATES.value: 5,
             ResourceLimit.API_KEYS.value: 2,
             ResourceLimit.DAILY_EMAILS.value: 100,
-            ResourceLimit.MONTHLY_EMAILS.value: 2000,
+            ResourceLimit.MONTHLY_EMAILS.value: 2_000,
             ResourceLimit.TEMPLATE_SIZE.value: 50_000,  # bytes
-            ResourceLimit.MAX_RECIPIENTS.value: 100,
+            ResourceLimit.MAX_RECIPIENTS.value: 100,  # per batch
             ResourceLimit.WEBHOOK_ENDPOINTS.value: 1,
+            ResourceLimit.SMTPCONFIGS.value: 2,
         },
         'features': ['basic_templates', 'basic_analytics']
     },
@@ -61,15 +65,17 @@ ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
             Permission.VIEW_ANALYTICS.value,
             Permission.EXPORT_DATA.value,
             Permission.MANAGE_WEBHOOKS.value,
+            Permission.MANAGE_SMTP.value,
         ],
         'limits': {
             ResourceLimit.TEMPLATES.value: 50,
             ResourceLimit.API_KEYS.value: 5,
-            ResourceLimit.DAILY_EMAILS.value: 1000,
-            ResourceLimit.MONTHLY_EMAILS.value: 20000,
-            ResourceLimit.TEMPLATE_SIZE.value: 500000,  # bytes
-            ResourceLimit.MAX_RECIPIENTS.value: 1000,
+            ResourceLimit.DAILY_EMAILS.value: 2000,
+            ResourceLimit.MONTHLY_EMAILS.value: 50_000,
+            ResourceLimit.TEMPLATE_SIZE.value: 500_000,  # bytes
+            ResourceLimit.MAX_RECIPIENTS.value: 1_000,  # per batch
             ResourceLimit.WEBHOOK_ENDPOINTS.value: 5,
+            ResourceLimit.SMTPCONFIGS.value: 10,
         },
         'features': ['advanced_templates', 'advanced_analytics',
                      'priority_support']
@@ -78,15 +84,8 @@ ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
         # All permissions except ADMIN
         'permissions': [p.value for p in Permission if p !=
                         Permission.ACCESS_ADMIN],
-        'limits': {
-            ResourceLimit.TEMPLATES.value: -1,  # unlimited
-            ResourceLimit.API_KEYS.value: -1,
-            ResourceLimit.DAILY_EMAILS.value: -1,
-            ResourceLimit.MONTHLY_EMAILS.value: -1,
-            ResourceLimit.TEMPLATE_SIZE.value: 5_000_000,
-            ResourceLimit.MAX_RECIPIENTS.value: 10000,
-            ResourceLimit.WEBHOOK_ENDPOINTS.value: -1,
-        },
+        # Unlimited for all resources,
+        'limits': {k.value: -1 for k in ResourceLimit},
         'features': ['all']
     },
     UserRole.ADMIN.value: {

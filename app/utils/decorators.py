@@ -6,9 +6,11 @@ from app.models import User, EmailJob
 from app.utils.roles import Permission, ResourceLimit, ROLE_CONFIGURATIONS
 from typing import Union, List
 from datetime import datetime, timezone
+from flask import current_app
 
 
 def require_verified_email(f):
+    """Decorator to check if user's email is verified."""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         user_id = get_jwt_identity()
@@ -24,9 +26,16 @@ def require_verified_email(f):
     return decorated_function
 
 
-def permission_required(permissions: Union[Permission, List[Permission]]):
-    """Decorator to check if user has required permissions."""
-    if isinstance(permissions, Permission):
+def permission_required(permissions: Union[Permission,
+                                           List[Permission], str, List[str]]):
+    """
+    Decorator to check if user has required permissions.
+
+    Args:
+        permissions: Can be a Permission enum, list of Permission enums,
+                    permission string, or list of permission strings
+    """
+    if isinstance(permissions, (Permission, str)):
         permissions = [permissions]
 
     def decorator(f):
@@ -37,10 +46,19 @@ def permission_required(permissions: Union[Permission, List[Permission]]):
                 return jsonify({"error": "User not found"}), 404
 
             user_permissions = ROLE_CONFIGURATIONS[user.role]['permissions']
-            if not all(p.value in user_permissions for p in permissions):
+
+            # Convert permissions to strings if they're enums
+            required_permissions = [
+                p.value if isinstance(p, Permission) else p
+                for p in permissions
+            ]
+
+            if not all(
+                    perm in user_permissions for perm in required_permissions):
                 return jsonify({
                     "error": "Insufficient permissions",
-                    "required_permissions": [p.value for p in permissions]
+                    "required_permissions": required_permissions,
+                    "user_permissions": user_permissions
                 }), 403
 
             return f(*args, **kwargs)
@@ -90,13 +108,24 @@ def check_resource_limits(resource_type: ResourceLimit):
             if not user:
                 return jsonify({"error": "User not found"}), 404
 
-            limit = ROLE_CONFIGURATIONS[user.role]['limits'][
-                resource_type.value]
+            try:
+                limit = ROLE_CONFIGURATIONS[user.role]['limits'][
+                    resource_type.value]
+            except KeyError:
+                current_app.logger.error(
+                    f"No limit configuration found for role {
+                        user.role} and resource {resource_type.value}"
+                )
+                return jsonify({
+                    "error": "Resource limit configuration not found"
+                }), 500
+
             if limit != -1:  # -1 means unlimited
                 current_usage = get_resource_usage(user, resource_type)
                 if current_usage >= limit:
                     return jsonify({
-                        "error": f"Daily limit reached for {resource_type.value}",
+                        "error": f"Daily limit reached for {
+                            resource_type.value}",
                         "current_usage": current_usage,
                         "limit": limit
                     }), 403
