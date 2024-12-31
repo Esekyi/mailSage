@@ -2,6 +2,8 @@ from datetime import datetime, timezone
 from sqlalchemy.ext.declarative import declared_attr
 from app.extensions import db
 from sqlalchemy.sql.sqltypes import TIMESTAMP
+from sqlalchemy.sql import func
+
 
 
 class BaseModel(db.Model):
@@ -9,12 +11,22 @@ class BaseModel(db.Model):
     __abstract__ = True
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(TIMESTAMP(timezone=True),
-                           default=datetime.now(timezone.utc))
+
+    created_at = db.Column(
+        TIMESTAMP(timezone=True),
+        # Use lambda for lazy evaluation
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),  # Fallback server default
+        nullable=False
+    )
+
     updated_at = db.Column(
         TIMESTAMP(timezone=True),
-        default=datetime.now(timezone.utc),
-        onupdate=datetime.now(timezone.utc)
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        server_onupdate=func.now(),
+        nullable=False
     )
 
 
