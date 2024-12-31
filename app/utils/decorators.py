@@ -72,7 +72,7 @@ def get_resource_usage(user: User, resource_type: ResourceLimit) -> int:
         hour=0, minute=0, second=0, microsecond=0)
 
     if resource_type == ResourceLimit.TEMPLATES:
-        return user.templates.count()
+        return user.templates.filter_by(is_active=True, deleted_at=None).count()
 
     elif resource_type == ResourceLimit.API_KEYS:
         return user.api_keys.filter_by(is_active=True).count()
@@ -88,7 +88,7 @@ def get_resource_usage(user: User, resource_type: ResourceLimit) -> int:
         ).with_entities(db.func.sum(EmailJob.recipient_count)).scalar() or 0
 
     elif resource_type == ResourceLimit.TEMPLATE_SIZE:
-        return sum(t.size for t in user.templates)
+        return sum(t.size for t in user.templates.filter_by(is_active=True, deleted_at=None).all())
 
     elif resource_type == ResourceLimit.MAX_RECIPIENTS:
         return sum(d.recipient_count for d in user.email_jobs.email_deliveries)
@@ -123,11 +123,14 @@ def check_resource_limits(resource_type: ResourceLimit):
             if limit != -1:  # -1 means unlimited
                 current_usage = get_resource_usage(user, resource_type)
                 if current_usage >= limit:
+                    resource_name = resource_type.value.replace('_', ' ').title()
                     return jsonify({
-                        "error": f"Daily limit reached for {
-                            resource_type.value}",
+                        "error": f"You have reached the limit of {limit} {resource_name} "
+                        f"for your {user.role} plan",
                         "current_usage": current_usage,
-                        "limit": limit
+                        "limit": limit,
+                        "resource_type": resource_type.value,
+                        "plan": user.role
                     }), 403
 
             return f(*args, **kwargs)
