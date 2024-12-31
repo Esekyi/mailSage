@@ -32,7 +32,7 @@ send_bp = Blueprint('send', __name__,
                     url_prefix='/api/v1/send')
 
 
-@send_bp.route('/email', methods=['POST'])
+@send_bp.route('/email', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.SEND_EMAILS.value)
@@ -107,7 +107,7 @@ def send_single_email():
     }), 202
 
 
-@send_bp.route('/batch', methods=['POST'])
+@send_bp.route('/batch', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.SEND_EMAILS.value)
@@ -193,7 +193,7 @@ def send_batch_email():
     }), 202
 
 
-@send_bp.route('/status/<int:job_id>', methods=['GET'])
+@send_bp.route('/status/<int:job_id>', methods=['GET'], strict_slashes=False)
 @jwt_required()
 def get_email_status(job_id):
     """Get status of an email job."""

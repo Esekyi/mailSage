@@ -26,7 +26,7 @@ smtp_bp = Blueprint('smtp', __name__,
                     url_prefix='/api/v1/smtp')
 
 
-@smtp_bp.route('/configs', methods=['GET'])
+@smtp_bp.route('/configs', methods=['GET'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 def list_smtp_configs():
@@ -43,7 +43,7 @@ def list_smtp_configs():
     }), 200
 
 
-@smtp_bp.route('/configs/<int:config_id>', methods=['GET'])
+@smtp_bp.route('/configs/<int:config_id>', methods=['GET'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
@@ -58,7 +58,7 @@ def get_smtp_config(config_id: int):
     return jsonify(config.to_dict()), 200
 
 
-@smtp_bp.route('/configs', methods=['POST'])
+@smtp_bp.route('/configs', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
@@ -103,7 +103,7 @@ def create_smtp_config():
     return jsonify(config.to_dict()), 201
 
 
-@smtp_bp.route('/configs/<int:config_id>', methods=['PUT'])
+@smtp_bp.route('/configs/<int:config_id>', methods=['PUT'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
@@ -140,7 +140,7 @@ def update_smtp_config(config_id: int):
     return jsonify(config.to_dict()), 200
 
 
-@smtp_bp.route('/configs/<int:config_id>', methods=['DELETE'])
+@smtp_bp.route('/configs/<int:config_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
@@ -167,7 +167,7 @@ def delete_smtp_config(config_id: int):
     return jsonify({"message": "Configuration deleted successfully"}), 200
 
 
-@smtp_bp.route('/configs/<int:config_id>/test', methods=['POST'])
+@smtp_bp.route('/configs/<int:config_id>/test', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
@@ -186,7 +186,7 @@ def test_smtp_config(config_id: int):
     }), 200
 
 
-@smtp_bp.route('/configs/<int:config_id>/set-default', methods=['POST'])
+@smtp_bp.route('/configs/<int:config_id>/set-default', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP.value)

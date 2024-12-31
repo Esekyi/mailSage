@@ -41,7 +41,7 @@ class PasswordResetSchema(Schema):
 auth_bp = Blueprint('auth', __name__, url_prefix='/api/v1/auth')
 
 
-@auth_bp.route('/register', methods=['POST'])
+@auth_bp.route('/register', methods=['POST'], strict_slashes=False)
 def register():
     """Register a new user."""
     schema = RegisterSchema()
@@ -87,7 +87,7 @@ def register():
         }), 500
 
 
-@auth_bp.route('/verify-email', methods=['POST', 'GET'])
+@auth_bp.route('/verify-email', methods=['POST', 'GET'], strict_slashes=False)
 def verify_email():
     """Verify user's email using token."""
     if request.method == 'POST':
@@ -122,7 +122,7 @@ def verify_email():
     }), 200
 
 
-@auth_bp.route('/resend-verification', methods=['POST'])
+@auth_bp.route('/resend-verification', methods=['POST'], strict_slashes=False)
 def resend_verification():
     """Resend verification email to user."""
     try:
@@ -169,7 +169,7 @@ def resend_verification():
         }), 500
 
 
-@auth_bp.route('/refresh', methods=['POST'])
+@auth_bp.route('/refresh', methods=['POST'], strict_slashes=False)
 def refresh_token():
     """Generate new access token using refresh token."""
     refresh_token = request.json.get('refresh_token')
@@ -185,7 +185,7 @@ def refresh_token():
         return jsonify({"error": str(e)}), 401
 
 
-@auth_bp.route('/login', methods=['POST'])
+@auth_bp.route('/login', methods=['POST'], strict_slashes=False)
 def login():
     """Authenticate user and return token."""
     schema = LoginSchema()
@@ -239,7 +239,7 @@ def login():
         }), 500
 
 
-@auth_bp.route('/password-reset', methods=['POST'])
+@auth_bp.route('/password-reset', methods=['POST'], strict_slashes=False)
 def request_password_reset():
     """Request a password reset."""
     schema = PasswordResetRequestSchema()
@@ -256,7 +256,7 @@ def request_password_reset():
     }), 200
 
 
-@auth_bp.route('/password-reset/verify', methods=['POST'])
+@auth_bp.route('/password-reset/verify', methods=['POST'], strict_slashes=False)
 def reset_password():
     """Reset password using token."""
     schema = PasswordResetSchema()
@@ -276,7 +276,7 @@ def reset_password():
     }), 200
 
 
-@auth_bp.route('/api-keys', methods=['POST'])
+@auth_bp.route('/api-keys', methods=['POST'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 @check_resource_limits(ResourceLimit.API_KEYS)
@@ -303,7 +303,7 @@ def create_api_key():
     }), 201
 
 
-@auth_bp.route('/api-keys', methods=['GET'])
+@auth_bp.route('/api-keys', methods=['GET'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 def list_api_keys():
@@ -327,7 +327,7 @@ def list_api_keys():
     }), 200
 
 
-@auth_bp.route('/api-keys/<int:key_id>', methods=['DELETE'])
+@auth_bp.route('/api-keys/<int:key_id>', methods=['DELETE'], strict_slashes=False)
 @jwt_required()
 @require_verified_email
 def revoke_api_key(key_id):
