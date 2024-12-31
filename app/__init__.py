@@ -6,6 +6,7 @@ from app.tasks.celery_app import create_celery_app
 from app.tasks.schedule import CELERY_CONFIG
 from flask_jwt_extended import JWTManager
 from app.utils.logging import setup_logger
+from app.utils.error_handlers import register_error_handlers
 import logging
 
 
@@ -65,7 +66,7 @@ def create_app(config_class=DevConfig):
     celery.conf.update(CELERY_CONFIG)
 
     # Register blueprints
-    from app.api import auth, templates, analytics, send, smtp
+    from app.api import auth, templates, analytics, send, smtp, dashboard
     from app.routes import admin
     app.register_blueprint(auth.auth_bp)
     app.register_blueprint(templates.templates_bp)
@@ -73,6 +74,7 @@ def create_app(config_class=DevConfig):
     app.register_blueprint(send.send_bp)
     app.register_blueprint(smtp.smtp_bp)
     app.register_blueprint(admin.admin_bp)
+    app.register_blueprint(dashboard.dashboard_bp)
 
     @app.after_request
     def after_request(response):
@@ -81,5 +83,7 @@ def create_app(config_class=DevConfig):
         response.headers.add('Access-Control-Allow-Methods',
                              'GET, POST, PUT, DELETE, OPTIONS')
         return response
+
+    register_error_handlers(app)
 
     return app

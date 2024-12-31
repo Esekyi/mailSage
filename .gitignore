@@ -11,3 +11,4 @@ dump.rdb
 .DS_Store
 .pytest_cache/
 smtp_test.py
+TODO.md
