@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
 from sqlalchemy.ext.declarative import declared_attr
 from app.extensions import db
+from sqlalchemy.sql.sqltypes import TIMESTAMP
+from sqlalchemy.sql import func
+
 
 
 class BaseModel(db.Model):
@@ -8,15 +11,28 @@ class BaseModel(db.Model):
     __abstract__ = True
 
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.now(timezone.utc))
+
+    created_at = db.Column(
+        TIMESTAMP(timezone=True),
+        # Use lambda for lazy evaluation
+        default=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),  # Fallback server default
+        nullable=False
+    )
+
     updated_at = db.Column(
-        db.DateTime, default=datetime.now(
-            timezone.utc), onupdate=datetime.now(timezone.utc))
+        TIMESTAMP(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        server_default=func.now(),
+        server_onupdate=func.now(),
+        nullable=False
+    )
 
 
 class SoftDeleteMixin:
     """Mixin for soft delete functionality."""
-    deleted_at = db.Column(db.DateTime, nullable=True)
+    deleted_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
     deleted_by = db.Column(db.Integer, nullable=True)
 
     def soft_delete(self, user_id: int = None) -> None:

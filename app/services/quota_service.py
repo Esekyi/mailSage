@@ -3,8 +3,9 @@ from typing import Tuple
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db, redis_client
-from app.models.user import User
+from app.models import User, Template, APIKey
 from app.utils.logging import logger
+from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
 
 
 class QuotaService:
@@ -35,3 +36,22 @@ class QuotaService:
             logger.error(f"Error resetting quotas: {str(e)}")
             db.session.rollback()
             return False
+
+    @staticmethod
+    def check_resource_limit(user_id: int, resource_type: str) -> bool:
+        user = User.query.get(user_id)
+        if not user:
+            return False
+
+        limit = ROLE_CONFIGURATIONS[user.role]['limits'][resource_type]
+        if limit == -1:  # unlimited
+            return True
+
+        current_count = {
+            ResourceLimit.TEMPLATES.value: Template.query.filter_by(
+                user_id=user_id).count(),
+            ResourceLimit.API_KEYS.value: APIKey.query.filter_by(
+                user_id=user_id, is_active=True).count(),
+        }.get(resource_type, 0)
+
+        return current_count < limit
