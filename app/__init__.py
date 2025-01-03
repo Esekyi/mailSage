@@ -66,7 +66,7 @@ def create_app(config_class=DevConfig):
     celery.conf.update(CELERY_CONFIG)
 
     # Register blueprints
-    from app.api import auth, templates, analytics, send, smtp, dashboard
+    from app.api import auth, templates, analytics, send, smtp, dashboard, user_routes
     from app.routes import admin
     app.register_blueprint(auth.auth_bp)
     app.register_blueprint(templates.templates_bp)
@@ -75,6 +75,7 @@ def create_app(config_class=DevConfig):
     app.register_blueprint(smtp.smtp_bp)
     app.register_blueprint(admin.admin_bp)
     app.register_blueprint(dashboard.dashboard_bp)
+    app.register_blueprint(user_routes.profile_bp)
 
     @app.after_request
     def after_request(response):
