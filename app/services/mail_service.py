@@ -56,8 +56,21 @@ class MailService:
                     if not smtp_config:
                         return False, "No active SMTP configuration found"
 
+                # Lock the SMTP config for update to prevent race conditions
+                smtp_config = db.session.query(
+                    SMTPConfiguration).with_for_update().get(smtp_config.id)
+
+                current_app.logger.info(f"Current SMTP stats - emails_sent_today: {
+                                        smtp_config.emails_sent_today}, last_reset_date: {smtp_config.last_reset_date}")
+                current_app.logger.info(f"Current UTC date: {
+                                        datetime.now(timezone.utc).date()}")
+
                 # Check daily limits for user SMTPs
-                if smtp_config.needs_daily_reset():
+                needs_reset = smtp_config.needs_daily_reset()
+                current_app.logger.info(f"Needs daily reset: {needs_reset}")
+
+                if needs_reset:
+                    current_app.logger.info("Resetting daily counter to 0")
                     smtp_config.emails_sent_today = 0
                     smtp_config.last_reset_date = datetime.now(
                         timezone.utc).date()
@@ -129,10 +142,16 @@ class MailService:
 
                 # Update stats only for user SMTPs
                 if not is_system_email:
+                    current_app.logger.info(
+                        f"Before increment - emails_sent_today: {smtp_config.emails_sent_today}")
                     smtp_config.emails_sent_today += 1
                     smtp_config.last_used_at = datetime.now(timezone.utc)
                     smtp_config.failure_count = 0
+                    current_app.logger.info(
+                        f"After increment - emails_sent_today: {smtp_config.emails_sent_today}")
                     db.session.commit()
+                    current_app.logger.info(
+                        "Committed counter update to database")
                     current_app.logger.debug("Updated user SMTP statistics")
 
                 return True, None

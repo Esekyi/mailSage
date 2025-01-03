@@ -1,7 +1,7 @@
 from typing import Dict, Optional, Tuple, List, Set, Any
 from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db
-from app.models.template import Template, TemplateStats
+from app.models import Template, TemplateStats, User
 from app.utils.logging import logger
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
@@ -65,6 +65,17 @@ class TemplateService:
             )
 
             db.session.add(template)
+
+            # Add notification
+            user = User.query.get_or_404(user_id)
+            user.add_notification(
+                title="Template Created",
+                message=f"Template '{template.name}' has been created",
+                type="success",
+                category="template",
+                meta_data={"template_id": template.id}
+            )
+
             db.session.commit()
 
             return template, None
@@ -112,6 +123,17 @@ class TemplateService:
                 new_version.description = description
 
             db.session.add(new_version)
+
+            # Update notification
+            user = User.query.get_or_404(user_id)
+            user.add_notification(
+                title="Template Updated",
+                message=f"Template '{new_version.name}' has been updated",
+                type="success",
+                category="template",
+                meta_data={"template_id": new_version.id}
+            )
+
             db.session.commit()
 
             return new_version, None
