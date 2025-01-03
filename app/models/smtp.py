@@ -23,7 +23,7 @@ class SMTPConfiguration(BaseModel, AuditMixin):
     from_email = db.Column(db.String(255), nullable=True)
 
     # Usage tracking
-    daily_limit = db.Column(db.Integer, default=2000)  # Daily sending limit
+    daily_limit = db.Column(db.Integer, default=100)  # Daily sending limit
     emails_sent_today = db.Column(db.Integer, default=0)
     last_reset_date = db.Column(
         TIMESTAMP(timezone=True), default=datetime.now(timezone.utc).date())
@@ -39,7 +39,12 @@ class SMTPConfiguration(BaseModel, AuditMixin):
 
     def needs_daily_reset(self) -> bool:
         """Check if the daily counter needs to be reset."""
-        return self.last_reset_date != datetime.now(timezone.utc).date()
+        if not self.last_reset_date:
+            return True
+        # Convert datetime to date for proper comparison
+        last_reset = self.last_reset_date.date()
+        current_date = datetime.now(timezone.utc).date()
+        return last_reset < current_date  # Only reset if last_reset is before current date
 
     def can_send_emails(self) -> bool:
         """Check if this SMTP can still send emails today."""
