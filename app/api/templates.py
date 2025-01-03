@@ -8,7 +8,9 @@ from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
 from app.utils.decorators import check_resource_limits
 from app.services.template_service import TemplateService
 from app.utils.pagination import paginate
-
+from app.services.search_service import TemplateSearchService
+from sqlalchemy import or_
+from flask import current_app
 
 class TemplateSchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
@@ -112,7 +114,32 @@ def update_template(template_id: int):
 def list_templates():
     """List all active templates for the user."""
     user_id = get_jwt_identity()
-    query = Template.query.filter_by(user_id=user_id, is_active=True, deleted_at=None)
+    search_query = request.args.get('search', '').strip()
+
+    # Start with base query
+    if search_query:
+        # Use search service when search parameter is present
+        query = TemplateSearchService.search_templates(search_query, user_id)
+    else:
+        # Normal query without search
+        query = Template.query.filter_by(
+            user_id=user_id,
+            is_active=True,
+            deleted_at=None
+        )
+
+    # Apply sorting
+    sort_by = request.args.get('sort_by', 'created_at')
+    sort_order = request.args.get('sort_order', 'desc')
+
+    if hasattr(Template, sort_by):
+        sort_column = getattr(Template, sort_by)
+        if sort_order == 'desc':
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+    else:
+        query = query.order_by(Template.created_at.desc())
 
     # Use the pagination utility
     paginated = paginate(query, schema=None)

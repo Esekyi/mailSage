@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import Schema, fields, validate, ValidationError
 from app.models import User, SMTPConfiguration
@@ -19,7 +19,7 @@ class SMTPConfigSchema(Schema):
     use_tls = fields.Bool(missing=True)
     from_email = fields.Email(required=True)
     is_default = fields.Bool(missing=False)
-    daily_limit = fields.Int(missing=2000, validate=validate.Range(min=1))
+    daily_limit = fields.Int(missing=100, validate=validate.Range(min=1))
 
 
 smtp_bp = Blueprint('smtp', __name__,
@@ -84,23 +84,35 @@ def create_smtp_config():
 
     # Validate request body
     schema = SMTPConfigSchema()
-
     try:
         data = schema.load(request.json)
     except ValidationError as e:
         return jsonify({'error': str(e)}), 400
 
-    # Validate SMTP connection
+    # Validate SMTP connection with detailed error handling
+    current_app.logger.info(f"Validating new SMTP configuration for {
+                            data['host']}:{data['port']}")
     valid, error = SMTPService.validate_smtp_config(data)
     if not valid:
-        return jsonify({"error": f"Invalid SMTP configuration: {error}"}), 400
+        return jsonify({
+            "error": "Invalid SMTP configuration",
+            "details": error,
+            "code": "SMTP_VALIDATION_FAILED"
+        }), 400
 
     # If valid, create the configuration
     config, error = SMTPService.create_config(user.id, data)
     if not config:
-        return jsonify({"error": error}), 400
+        return jsonify({
+            "error": "Failed to save configuration",
+            "details": error,
+            "code": "SMTP_SAVE_FAILED"
+        }), 400
 
-    return jsonify(config.to_dict()), 201
+    return jsonify({
+        "message": "SMTP configuration created successfully",
+        "config": config.to_dict()
+    }), 201
 
 
 @smtp_bp.route('/configs/<int:config_id>', methods=['PUT'], strict_slashes=False)
@@ -115,29 +127,44 @@ def update_smtp_config(config_id: int):
 
     # Validate request body
     schema = SMTPConfigSchema()
-
     try:
         data = schema.load(request.json)
     except ValidationError as e:
         return jsonify({'error': str(e)}), 400
 
-    # Validate SMTP connection if credentials changed
-    if (data['host'] != config.host or
+    # Check if critical SMTP settings have changed
+    credentials_changed = (
+        data['host'] != config.host or
         data['port'] != config.port or
         data['username'] != config.username or
-            'password' in data):
-        valid, error = SMTPService.validate_smtp_config(data)
+        'password' in data
+    )
 
+    # Validate SMTP connection if credentials changed
+    if credentials_changed:
+        current_app.logger.info(f"Validating updated SMTP configuration for {
+                                data['host']}:{data['port']}")
+        valid, error = SMTPService.validate_smtp_config(data)
         if not valid:
-            return jsonify(
-                {"error": f"Invalid SMTP configuration: {error}"}), 400
+            return jsonify({
+                "error": "Invalid SMTP configuration",
+                "details": error,
+                "code": "SMTP_VALIDATION_FAILED"
+            }), 400
 
     # Update configuration
     success, error = SMTPService.update_config(config, data)
     if not success:
-        return jsonify({"error": error}), 400
+        return jsonify({
+            "error": "Failed to update configuration",
+            "details": error,
+            "code": "SMTP_UPDATE_FAILED"
+        }), 400
 
-    return jsonify(config.to_dict()), 200
+    return jsonify({
+        "message": "SMTP configuration updated successfully",
+        "config": config.to_dict()
+    }), 200
 
 
 @smtp_bp.route('/configs/<int:config_id>', methods=['DELETE'], strict_slashes=False)
@@ -172,17 +199,65 @@ def delete_smtp_config(config_id: int):
 @require_verified_email
 @permission_required(Permission.MANAGE_SMTP)
 def test_smtp_config(config_id: int):
-    """Test specific SMTP configuration."""
+    """Test specific SMTP configuration with comprehensive checks and send a test email."""
     config = SMTPConfiguration.query.get_or_404(config_id)
     if int(config.user_id) != int(get_jwt_identity()):
         return jsonify({"error": "Unauthorized"}), 403
 
-    success, error = MailService.send_test_email(config)
+
+    # Step 1: Test SMTP Connection
+    current_app.logger.info(
+        f"Starting comprehensive SMTP test for configuration {config.id}")
+    connection_success, connection_error = SMTPService.test_connection(config)
+
+    if not connection_success:
+        return jsonify({
+            "error": "SMTP connection test failed",
+            "details": connection_error,
+            "code": "SMTP_CONNECTION_TEST_FAILED"
+        }), 400
+
+    # Step 2: Send Test Email
+    current_app.logger.info(
+        f"Sending test email using configuration {config.id}")
+    user = User.query.get(config.user_id)
+    to_email = request.json.get('to_email', user.email)
+
+    success, error = MailService.send_email(
+        user_id=user.id,
+        to_email=to_email,
+        subject="mailSage SMTP Test",
+        body=f"""
+        <h2>SMTP Configuration Test</h2>
+        <p>Your SMTP configuration has been tested successfully!</p>
+        <h3>Configuration Details:</h3>
+        <ul>
+            <li>Name: {config.name}</li>
+            <li>Host: {config.host}</li>
+            <li>Port: {config.port}</li>
+            <li>Username: {config.username}</li>
+            <li>From Email: {config.from_email}</li>
+            <li>TLS Enabled: {'Yes' if config.use_tls else 'No'}</li>
+        </ul>
+        <p>This email confirms that your SMTP configuration is working correctly.</p>
+        """,
+        smtp_config=config
+    )
+
     if not success:
-        return jsonify({"error": error}), 400
+        return jsonify({
+            "error": "SMTP test email failed",
+            "details": error,
+            "code": "SMTP_TEST_EMAIL_FAILED",
+            "connection_test": "Passed"
+        }), 400
 
     return jsonify({
-        "message": "Test email sent successfully"
+        "message": "SMTP test completed successfully",
+        "details": "Both connection test and test email were successful",
+        "config": config.to_dict(),
+        "last_test": config.last_test_at.isoformat() if config.last_test_at else None,
+        "test_email_sent_to": to_email
     }), 200
 
 
