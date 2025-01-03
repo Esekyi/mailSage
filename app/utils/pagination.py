@@ -1,4 +1,3 @@
-# app/utils/pagination.py
 from flask import request
 from typing import TypeVar, Generic, List, Dict, Any
 from sqlalchemy.orm import Query
