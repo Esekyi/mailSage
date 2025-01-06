@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from flask import request
 from typing import Optional, Tuple
 import secrets
 import hashlib
 from flask_jwt_extended import create_access_token, create_refresh_token
-from app.models import APIKey, User
+from app.models import User
 from app.extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import current_app, render_template
@@ -44,6 +45,15 @@ class AuthenticationService:
                 db.session.rollback()
                 raise ValueError(
                     "Registration successful but failed to send verification email. Please try resending the verification email.")
+
+            # Add notification
+            user.add_notification(
+                title="Welcome to Mailsage!",
+                message=f"You've successfully registered an account. Check documentation for next steps.",
+                type="success",
+                category="user",
+                meta_data={"user_id": user.id}
+            )
 
             db.session.commit()  # Commit the transaction
 
@@ -120,6 +130,15 @@ class AuthenticationService:
         # create access token
         tokens = AuthenticationService.generate_tokens(user.id)
 
+        # Add notification
+        user.add_notification(
+            title="Activity: Login",
+            message=f"Your account was accessed from {request.remote_addr}. If this was not you, please reset your password.",
+            type="security",
+            category="user",
+            meta_data={"user_id": user.id}
+        )
+
         return user, tokens
 
     @staticmethod
@@ -183,7 +202,7 @@ class AuthenticationService:
 
         try:
             mail_service = MailService()
-            mail_service.send_email(
+            mail_service.send_raw_email(
                 recipient=user.email,
                 subject="Password Reset Request",
                 html_content=render_template(
@@ -195,70 +214,3 @@ class AuthenticationService:
         except Exception as e:
             current_app.logger.error(f"Failed to send reset email: {str(e)}")
             return False
-
-    # API Key management
-    @staticmethod
-    def generate_api_key(user_id: int, name: str,
-                         permissions: dict = None) -> APIKey:
-        """Generate new API key for a user."""
-        # Generate a random secrete key
-        key = secrets.token_urlsafe(32)
-        key_hash = hashlib.sha256(key.encode()).hexdigest()
-
-        api_key = APIKey(
-            user_id=user_id,
-            key_hash=key_hash,
-            name=name,
-            permissions=permissions or {"scope": "full_access"},
-            is_active=True,
-            expires_at=datetime.now(
-                timezone.utc) + timedelta(days=365)  # 1 year expiry
-        )
-
-        db.session.add(api_key)
-        db.session.commit()
-
-        # Return both the API key object and the actual key
-        # The actual key will only be shown once
-        api_key.key = key
-        return api_key
-
-    @staticmethod
-    def verify_api_key(key: str) -> Optional[APIKey]:
-        """Verify an API key and return the associated APIKey object."""
-        key_hash = hashlib.sha256(key.encode()).hexdigest()
-
-        api_key = APIKey.query.filter_by(
-            key_hash=key_hash,
-            is_active=True
-        ).first()
-
-        if not api_key:
-            return None
-
-        if api_key.expires_at < datetime.now(timezone.utc):
-            api_key.is_active = False
-            db.session.commit()
-            return None
-
-        # Update last used timestamp
-        api_key.last_used_at = datetime.now(timezone.utc)
-        db.session.commit()
-
-        return api_key
-
-    @staticmethod
-    def revoke_api_key(key_id: str, user_id: int) -> bool:
-        """Revoke an API key."""
-        api_key = APIKey.query.filter_by(
-            id=key_id,
-            user_id=user_id,
-            is_active=True
-        ).first()
-
-        if not api_key:
-            return False
-
-        api_key.is_active = False
-        db.session.commit()
-        return True

@@ -1,5 +1,5 @@
 from functools import wraps
-from flask import jsonify
+from flask import jsonify, request
 from flask_jwt_extended import get_jwt_identity
 from app.extensions import db
 from app.models import User, EmailJob
@@ -7,6 +7,42 @@ from app.utils.roles import Permission, ResourceLimit, ROLE_CONFIGURATIONS
 from typing import Union, List
 from datetime import datetime, timezone
 from flask import current_app
+from app.services.api_key_service import ApiKeyService
+
+
+def require_api_key(f):
+    """Decorator to check if user has a valid API key."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return jsonify({
+                "error": "No API key provided",
+                "code": "MISSING_API_KEY"
+            }), 401
+
+        try:
+            key = auth_header.split(' ')[1]
+        except IndexError:
+            return jsonify({
+                "error": "Invalid Authorization header",
+                "code": "INVALID_AUTHORIZATION_HEADER"
+            }), 401
+
+        # Verify API key and get associated user
+        api_key, error = ApiKeyService.validate_key(key)
+        if error:
+            return jsonify({
+                "error": error,
+            }), 401
+
+        # Add user_id to request context
+        request.user_id = api_key.user_id
+        # Add key to request for usage tracking
+        request.api_key = api_key
+
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 def require_verified_email(f):

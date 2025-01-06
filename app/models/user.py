@@ -49,7 +49,7 @@ class User(BaseModel, SoftDeleteMixin, AuditMixin):
 
     # Relationships
     templates = db.relationship('Template', backref='user', lazy='dynamic')
-    api_keys = db.relationship('APIKey', backref='user', lazy='dynamic')
+    api_keys = db.relationship('ApiKey', back_populates='user', lazy='dynamic')
     email_jobs = db.relationship(
         'EmailJob',
         backref=db.backref('user', lazy=True),

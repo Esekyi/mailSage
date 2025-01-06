@@ -6,9 +6,132 @@ from app.utils.logging import logger
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
 import re
+from jinja2 import Environment, exceptions
+from app.extensions import redis_client
+
+
+class TemplateRenderService:
+    def __init__(self):
+        self.env = Environment(autoescape=True)
+        self.cache_timeout = 3600  # 1 hour
+
+    def _get_cache_key(self, template_id: int, variables: Dict[str, Any]) -> str:
+        """Generate cache key for template rendering."""
+        variables_hash = hash(frozenset(variables.items()))
+        return f"template_render:{template_id}:{variables_hash}"
+
+    def sanitize_html(self, html_content: str) -> str:
+        """Sanitize HTML content to prevent XSS and ensure email client compatibility."""
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Remove potentially dangerous tags and attributes
+        for tag in soup.find_all():
+            if tag.name in ['script', 'iframe', 'object', 'embed']:
+                tag.decompose()
+
+            # Remove on* attributes (event handlers)
+            for attr in list(tag.attrs):
+                if attr.startswith('on'):
+                    del tag[attr]
+
+        return str(soup)
+
+    def get_cached_render(self, template_id: int, variables: Dict[str, Any]) -> Optional[str]:
+        """Get cached rendered template if available."""
+        cache_key = self._get_cache_key(template_id, variables)
+        return redis_client.get(cache_key)
+
+    def cache_render(self, template_id: int, variables: Dict[str, Any], rendered: str):
+        """Cache rendered template."""
+        cache_key = self._get_cache_key(template_id, variables)
+        redis_client.setex(cache_key, self.cache_timeout, rendered)
+
+    def validate_template_variables(self, template: Template, variables: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        """Validate that all required variables are provided."""
+        try:
+            # Get required variables from template
+            required_vars = template.required_variables
+
+            # Check for missing variables
+            missing_vars = required_vars - set(variables.keys())
+            if missing_vars:
+                return False, f"Missing required variables: {', '.join(missing_vars)}"
+
+            return True, None
+
+        except Exception as e:
+            logger.error(f"Template variable validation error: {str(e)}")
+            return False, str(e)
+
+    def render_template(self,
+                        template: Template,
+                        variables: Dict[str, Any],
+                        use_cache: bool = True) -> Tuple[str, Optional[str]]:
+        """
+        Render template with provided variables.
+
+        Args:
+            template: Template model instance
+            variables: Dictionary of variables to render
+            use_cache: Whether to use template caching
+
+        Returns:
+            Tuple of (rendered_content, error_message)
+        """
+        try:
+            # Check cache first if enabled
+            if use_cache:
+                cached = self.get_cached_render(template.id, variables)
+                if cached:
+                    return cached, None
+
+            # Validate variables
+            is_valid, error = self.validate_template_variables(
+                template, variables)
+            if not is_valid:
+                raise ValueError(error)
+
+            # Render template
+            template_obj = self.env.from_string(template.html_content)
+            rendered_html = template_obj.render(**variables)
+
+            # Sanitize output
+            rendered = self.sanitize_html(rendered_html)
+
+            # Cache result if caching is enabled
+            if use_cache:
+                self.cache_render(template.id, variables, rendered)
+
+            return rendered, None
+
+        except exceptions.TemplateError as e:
+            error_msg = f"Template rendering error: {str(e)}"
+            logger.error(error_msg)
+            return None, error_msg
+        except Exception as e:
+            error_msg = f"Unexpected error rendering template: {str(e)}"
+            logger.error(error_msg)
+            return None, error_msg
 
 
 class TemplateService:
+    def __init__(self):
+        self.renderer = TemplateRenderService()
+
+    def render_template_for_send(self, template_id: int, variables: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Render a template for email sending with variable validation and caching.
+
+        Returns:
+            Tuple of (rendered_content, error_message)
+        """
+        template = self.get_template(template_id)
+        if not template:
+            return None, "Template not found"
+
+        return self.renderer.render_template(template, variables)
+
+
     @staticmethod
     def validate_template_html(html_content: str) -> Tuple[bool, Optional[str]]:
         """
@@ -71,7 +194,7 @@ class TemplateService:
             user.add_notification(
                 title="Template Created",
                 message=f"Template '{template.name}' has been created",
-                type="success",
+                type="info",
                 category="template",
                 meta_data={"template_id": template.id}
             )
@@ -256,6 +379,16 @@ class TemplateService:
                 'deleted_at': now.isoformat(),
                 'deleted_by': user_id
             }
+
+            # Add notification
+            user = User.query.get_or_404(user_id)
+            user.add_notification(
+                title="Template Deleted",
+                message=f"Template '{template.name}' has been deleted",
+                type="critical",
+                category="template",
+                meta_data={"template_id": template.id}
+            )
 
             db.session.commit()
             logger.info(f"Successfully deleted template {template_id} and {

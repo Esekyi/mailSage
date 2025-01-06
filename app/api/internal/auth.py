@@ -1,13 +1,8 @@
 from flask import Blueprint, request, jsonify, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
 from marshmallow import Schema, validate, fields, ValidationError
 from app.services.auth_services import AuthenticationService
-from app.models import APIKey, User
+from app.models import User
 from app.services.verification_service import VerificationService
-from app.utils.decorators import require_verified_email
-from app.extensions import db
-from app.utils.roles import ResourceLimit
-from app.utils.decorators import check_resource_limits
 
 
 # Schema definitions from marshmallow
@@ -21,11 +16,6 @@ class LoginSchema(Schema):
     email = fields.Email(required=True)
     password = fields.Str(required=True)
 
-
-class APIKeySchema(Schema):
-    name = fields.Str(required=True)
-    permissions = fields.Dict(keys=fields.Str(),
-                              values=fields.Raw(), required=False)
 
 
 class PasswordResetRequestSchema(Schema):
@@ -274,67 +264,3 @@ def reset_password():
     return jsonify({
         "message": "Password reset successfully"
     }), 200
-
-
-@auth_bp.route('/api-keys', methods=['POST'], strict_slashes=False)
-@jwt_required()
-@require_verified_email
-@check_resource_limits(ResourceLimit.API_KEYS)
-def create_api_key():
-    """Generate a new API key for the authenticated user."""
-    schema = APIKeySchema()
-    try:
-        data = schema.load(request.json)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
-
-    user_id = get_jwt_identity()
-    api_key = AuthenticationService.generate_api_key(
-        user_id=user_id,
-        name=data['name'],
-        permissions=data.get('permissions')
-    )
-
-    return jsonify({
-        "message": "API key generated successfully",
-        "api_key": api_key.key,  # Only time the key is exposed
-        "key_id": api_key.id,
-        "name": api_key.name,
-    }), 201
-
-
-@auth_bp.route('/api-keys', methods=['GET'], strict_slashes=False)
-@jwt_required()
-@require_verified_email
-def list_api_keys():
-    """List all active API keys for the authenticated user."""
-    user_id = get_jwt_identity()
-    api_keys = APIKey.query.filter_by(
-        user_id=user_id,
-        is_active=True
-    ).all()
-
-    return jsonify({
-        "api_keys": [{
-            "id": key.id,
-            "name": key.name,
-            "created_at": key.created_at.isoformat(),
-            "last_used_at": key.last_used_at.isoformat(
-            ) if key.last_used_at else None,
-            "expires_at": key.expires_at.isoformat(
-            ) if key.expires_at else None
-        } for key in api_keys]
-    }), 200
-
-
-@auth_bp.route('/api-keys/<int:key_id>', methods=['DELETE'], strict_slashes=False)
-@jwt_required()
-@require_verified_email
-def revoke_api_key(key_id):
-    """Revoke an API key."""
-    user_id = get_jwt_identity()
-    success = AuthenticationService.revoke_api_key(key_id, user_id)
-
-    if success:
-        return jsonify({"message": "API key revoked successfully"}), 200
-    return jsonify({"error": "API key not found"}), 404

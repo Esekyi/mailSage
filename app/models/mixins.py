@@ -1,6 +1,7 @@
 from datetime import datetime
 from sqlalchemy.orm import Query
 from typing import Any, Dict
+import enum
 
 
 class SerializationMixin:
@@ -15,6 +16,8 @@ class SerializationMixin:
                 value = getattr(self, key)
                 if isinstance(value, datetime):
                     value = value.isoformat()
+                elif isinstance(value, enum.Enum):
+                    value = value.value  # Use the string value of the enum
                 result[key] = value
         return result
 
