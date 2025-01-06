@@ -1,6 +1,6 @@
-# **📧 mailSage**
+# **📧 Mailsage**
 
-📧 mailSage is a robust, centralized Email-as-a-Service (EaaS) platform that simplifies email integrations and resource management. This project is designed to provide developers with a seamless API to handle email sending, templates, and API key generation, with role-based access control and customizable resource limits.
+📧 Mailsage is a robust, centralized Email-as-a-Service (EaaS) platform that simplifies email integrations and resource management. This project is designed to provide developers with a seamless API to handle email sending, templates, and API key generation, with role-based access control and customizable resource limits.
 
 ---
 
@@ -36,7 +36,7 @@
 - **🔐 API Key Management**:
 
   - Generate, revoke, and manage API keys for user accounts.
-  - Secure access to 📧 mailSage APIs.
+  - Secure access to 📧 Mailsage APIs.
 
 - **⚙️ Testing**:
 

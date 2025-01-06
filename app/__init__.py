@@ -1,6 +1,6 @@
 from flask import Flask
 from flask_cors import CORS
-from app.extensions import db, migrate
+from app.extensions import db, migrate, redis_client
 from app.config import DevConfig
 from app.tasks.celery_app import create_celery_app
 from app.tasks.schedule import CELERY_CONFIG
@@ -9,6 +9,8 @@ from app.utils.logging import setup_logger
 from app.utils.error_handlers import register_error_handlers
 import logging
 
+# Create celery instance first
+celery = create_celery_app()
 
 def create_app(config_class=DevConfig):
     """Create and configure the app factory to flask app"""
@@ -47,8 +49,10 @@ def create_app(config_class=DevConfig):
         }
     })
 
+    # Initialize extensions
     db.init_app(app)
     jwt = JWTManager(app)
+    redis_client.init_app(app)
 
     # Initialize extensions db, migrate, celery, jwt
     migrate.init_app(app, db)
@@ -65,9 +69,13 @@ def create_app(config_class=DevConfig):
     celery = create_celery_app(app)
     celery.conf.update(CELERY_CONFIG)
 
-    # Register blueprints
-    from app.api import auth, templates, analytics, send, smtp, dashboard, user_routes
+    # Register blueprints for internal routes
+    from app.api.internal import (
+        auth, templates, analytics, send, smtp, dashboard,
+        user_routes, job_control, api_keys, docs
+    )
     from app.routes import admin
+
     app.register_blueprint(auth.auth_bp)
     app.register_blueprint(templates.templates_bp)
     app.register_blueprint(analytics.analytics_bp)
@@ -76,6 +84,13 @@ def create_app(config_class=DevConfig):
     app.register_blueprint(admin.admin_bp)
     app.register_blueprint(dashboard.dashboard_bp)
     app.register_blueprint(user_routes.profile_bp)
+    app.register_blueprint(job_control.job_control_bp)
+    app.register_blueprint(api_keys.api_keys_bp)
+    app.register_blueprint(docs.docs_bp)
+
+    # Register blueprints for Public API
+    from app.api.emails import emails_bp
+    app.register_blueprint(emails_bp)
 
     @app.after_request
     def after_request(response):

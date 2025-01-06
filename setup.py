@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 
 setup(
-    name='mailsage',
+    name='Mailsage',
     version='0.1',
     packages=find_packages(),
     python_requires='>=3.8',
