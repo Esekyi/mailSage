@@ -5,6 +5,7 @@ from sqlalchemy.orm.dynamic import AppenderQuery
 from app.extensions import db
 from sqlalchemy.sql.sqltypes import TIMESTAMP
 from app.utils.db import JSONBType
+import enum
 
 
 def serialize_value(value):
@@ -15,6 +16,8 @@ def serialize_value(value):
         return f"<{value.__class__.__name__} id={getattr(value, 'id', None)}>"
     elif isinstance(value, (datetime, date)):
         return value.isoformat()
+    elif isinstance(value, enum.Enum):
+        return value.value
     return value
 
 
@@ -76,20 +79,22 @@ def audit_after_flush(session, context):
             )
 
             # Get the changes
+            attrs = {}
             if operation == 'UPDATE' and hasattr(obj, '__history__'):
-                attrs = {}
                 for attr in obj.__mapper__.attrs.keys():
                     if not isinstance(obj.__mapper__.attrs[attr],
                                       RelationshipProperty):
-                        history = getattr(obj.__history__, attr).all()
+                        history = getattr(obj.__history__, attr, None)
                         if history:
-                            attrs[attr] = {
-                                'old': history[0],
-                                'new': getattr(obj, attr)
-                            }
+                            historical_values = history.all()
+                            if historical_values:
+                                attrs[attr] = {
+                                    'old': serialize_value(historical_values[0]),
+                                    'new': serialize_value(getattr(obj, attr))
+                                }
             else:
                 attrs = {
-                    attr: getattr(obj, attr)
+                    attr: serialize_value(getattr(obj, attr))
                     for attr in obj.__mapper__.attrs.keys()
                     if not isinstance(obj.__mapper__.attrs[attr],
                                       RelationshipProperty)
@@ -106,5 +111,5 @@ def audit_after_flush(session, context):
                 user_id=getattr(obj, 'updated_by', None)
             ))
 
-    for change in changes:
-        session.add(change)
+    if changes:
+        session.add_all(changes)

@@ -4,6 +4,7 @@ from sqlalchemy.sql.sqltypes import TIMESTAMP
 from app.utils.db import JSONBType
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
+import uuid
 
 class EmailJob(BaseModel, AuditMixin):
     """Model for tracking email sending jobs."""
@@ -13,37 +14,46 @@ class EmailJob(BaseModel, AuditMixin):
     STATUS_PROCESSING = 'processing'
     STATUS_COMPLETED = 'completed'
     STATUS_FAILED = 'failed'
+    STATUS_PAUSED = 'paused'
 
     user_id = db.Column(db.Integer, db.ForeignKey(
         'users.id', ondelete='CASCADE'),
         nullable=False, index=True)
     template_id = db.Column(db.Integer, db.ForeignKey(
         'templates.id'), nullable=True)
+    campaign_id = db.Column(db.Integer, db.ForeignKey('email_campaigns.id'),
+                            nullable=True, index=True)
     smtp_config_id = db.Column(db.Integer, db.ForeignKey(
         'smtp_configurations.id', ondelete='SET NULL'), nullable=True)
 
+    # Job details
     subject = db.Column(db.String(255), nullable=False, default='No Subject')
-    body = db.Column(db.Text, nullable=False)  # Can be HTML
-    # pending, processing, completed, failed
+    body = db.Column(db.Text, nullable=False)  # Only for non-templated emails
     status = db.Column(db.String(20), default=STATUS_PENDING, index=True)
     # For priority queueing
     priority = db.Column(db.Integer, default=0, index=True)
 
-    # Metrics
+    # Tracking
+    tracking_id = db.Column(
+        db.String(36), default=lambda: str(uuid.uuid4()), unique=True)
+    tracking_enabled = db.Column(db.Boolean, default=True)
+
+    # Statistics
     recipient_count = db.Column(db.Integer, default=0)
     success_count = db.Column(db.Integer, default=0)
     failure_count = db.Column(db.Integer, default=0)
     bounce_count = db.Column(db.Integer, default=0)
+    open_count = db.Column(db.Integer, default=0)
     click_count = db.Column(db.Integer, default=0)
 
     # Store additional job metadata
     meta_data = db.Column(JSONBType, default=dict)
-    # For storing error information
     error_details = db.Column(JSONBType, nullable=True)
 
     # Timestamps
     started_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
     completed_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
+    last_processed_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
 
     # Relationships
     deliveries = db.relationship(
@@ -52,6 +62,7 @@ class EmailJob(BaseModel, AuditMixin):
         lazy='dynamic',
         cascade='all, delete-orphan'
     )
+    campaign = db.relationship('EmailCampaign', back_populates='jobs')
     smtp_config = db.relationship(
         'SMTPConfiguration',
         backref=db.backref('email_jobs', lazy='dynamic')
@@ -62,6 +73,11 @@ class EmailJob(BaseModel, AuditMixin):
                  priority),  # For efficient job queuing
     )
 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.tracking_id:
+            self.tracking_id = str(uuid.uuid4())
+
     def update_counts(self):
         """Update success and failure counts based on deliveries."""
         success = self.deliveries.filter_by(status='sent').count()
@@ -71,7 +87,7 @@ class EmailJob(BaseModel, AuditMixin):
 
         # Update status if all deliveries are processed
         if success + failure == self.recipient_count:
-            self.status = 'completed'
+            self.status = self.STATUS_COMPLETED
             self.completed_at = datetime.now(timezone.utc)
 
     def to_dict(self):
@@ -89,96 +105,24 @@ class EmailJob(BaseModel, AuditMixin):
             'smtp_config_id': self.smtp_config_id
         }
 
-    @classmethod
-    def get_user_statistics(cls, user_id: int, start_date=None, end_date=None):
-        """Get comprehensive email statistics for a user."""
-        query = cls.query.filter_by(user_id=user_id)
-
-        if start_date:
-            query = query.filter(cls.created_at >= start_date)
-        if end_date:
-            query = query.filter(cls.created_at <= end_date)
-
-        stats = {
-            'total_jobs': query.count(),
-            'total_emails': db.session.query(func.sum(cls.recipient_count)).filter(cls.user_id == user_id).scalar() or 0,
-            'successful_emails': db.session.query(func.sum(cls.success_count)).filter(cls.user_id == user_id).scalar() or 0,
-            'failed_emails': db.session.query(func.sum(cls.failure_count)).filter(cls.user_id == user_id).scalar() or 0,
-            'pending_jobs': query.filter_by(status='pending').count(),
-            'completed_jobs': query.filter_by(status='completed').count(),
-            'failed_jobs': query.filter_by(status='failed').count()
-        }
-
-        # Calculate success rate
-        if stats['total_emails'] > 0:
-            stats['success_rate'] = (
-                stats['successful_emails'] / stats['total_emails']) * 100
-        else:
-            stats['success_rate'] = 0
-
-        return stats
-
-    @classmethod
-    def get_daily_statistics(cls, user_id: int, days: int = 30):
-        """Get daily email statistics for the last N days."""
-        end_date = datetime.now(timezone.utc)
-        start_date = end_date - timedelta(days=days)
-
-        # Query to get daily counts stats
-        daily_stats = db.session.query(
-            func.date_trunc('day', cls.created_at).label('date'),
-            func.count(cls.id).label('total_jobs'),
-            func.sum(cls.recipient_count).label('total_emails'),
-            func.sum(cls.success_count).label('successful_emails'),
-            func.sum(cls.failure_count).label('failed_emails')
-        ).filter(
-            cls.user_id == user_id,
-            cls.created_at >= start_date,
-            cls.created_at <= end_date
-        ).group_by(
-            func.date_trunc('day', cls.created_at)
-        ).order_by(
-            func.date_trunc('day', cls.created_at)
-        ).all()
-
-        return [{
-            'date': stats.date.strftime('%Y-%m-%d'),
-            'total_jobs': stats.total_jobs,
-            'total_emails': stats.total_emails or 0,
-            'successful_emails': stats.successful_emails or 0,
-            'failed_emails': stats.failed_emails or 0,
-            'success_rate': ((stats.successful_emails or 0) / (stats.total_emails or 1)) * 100
-        } for stats in daily_stats]
-
-    @classmethod
-    def get_smtp_performance(cls, user_id: int):
-        """Get performance statistics per SMTP configuration."""
-        return db.session.query(
-            cls.smtp_config_id,
-            func.count(cls.id).label('total_jobs'),
-            func.sum(cls.recipient_count).label('total_emails'),
-            func.sum(cls.success_count).label('successful_emails'),
-            func.sum(cls.failure_count).label('failed_emails'),
-            func.avg(
-                (cls.success_count * 100.0) / cls.recipient_count
-            ).label('success_rate')
-        ).filter(
-            cls.user_id == user_id,
-            cls.smtp_config_id.isnot(None)
-        ).group_by(
-            cls.smtp_config_id
-        ).all()
-
 
 class EmailDelivery(BaseModel):
     """Model for tracking individual email deliveries within a job."""
     __tablename__ = 'email_deliveries'
 
+    STATUS_PENDING = 'pending'
+    STATUS_SENT = 'sent'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_FAILED = 'failed'
+    STATUS_BOUNCED = 'bounced'
+    STATUS_COMPLAINED = 'complained'
+
     job_id = db.Column(db.Integer, db.ForeignKey(
         'email_jobs.id', ondelete='CASCADE'),
         nullable=False, index=True)
     recipient = db.Column(db.String(255), nullable=False)
-    status = db.Column(db.String(20), default='pending',
+    variables = db.Column(JSONBType, nullable=True)
+    status = db.Column(db.String(20), default=STATUS_PENDING,
                        index=True)  # pending, sent, failed
 
     attempts = db.Column(db.Integer, default=0)
@@ -186,14 +130,76 @@ class EmailDelivery(BaseModel):
     error_message = db.Column(db.Text, nullable=True)
 
     # Tracking
-    tracking_id = db.Column(db.String(36), unique=True, nullable=False)
+    tracking_id = db.Column(
+        db.String(36), default=lambda: str(uuid.uuid4()), unique=True)
     opened_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
     clicked_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
+    unsubscribed_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
+    complained_at = db.Column(TIMESTAMP(timezone=True), nullable=True)
+
+    # Additional metadata
+    meta_data = db.Column(JSONBType, default=dict)
+    headers = db.Column(JSONBType, nullable=True)  # Store email headers
+
+    # Events relationship
+    events = db.relationship(
+        'CampaignEvent', backref='delivery', lazy='dynamic')
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if not self.tracking_id:
+            self.tracking_id = str(uuid.uuid4())
 
     __table_args__ = (
         db.Index('idx_delivery_tracking', tracking_id),  # For tracking lookups
         db.Index('idx_delivery_status', job_id, status),  # For status queries
     )
+
+    def record_open(self, user_agent: str = None, ip_address: str = None):
+        """Record an email open event."""
+        from app.models.campaign import CampaignEvent
+        if not self.opened_at:  # Only record first open
+            self.opened_at = datetime.now(timezone.utc)
+
+            # Create event if part of a campaign
+            if self.job.campaign_id:
+                event = CampaignEvent(
+                    campaign_id=self.job.campaign_id,
+                    job_id=self.job_id,
+                    delivery_id=self.id,
+                    event_type='open',
+                    recipient=self.recipient,
+                    user_agent=user_agent,
+                    ip_address=ip_address
+                )
+                db.session.add(event)
+
+            # Update counters
+            self.job.open_count += 1
+            db.session.commit()
+
+    def record_click(self, link_id: int, user_agent: str = None, ip_address: str = None):
+        """Record a link click event."""
+        from app.models.campaign import CampaignEvent
+        self.clicked_at = datetime.now(timezone.utc)
+
+        # Create event if part of a campaign
+        if self.job.campaign_id:
+            event = CampaignEvent(
+                campaign_id=self.job.campaign_id,
+                job_id=self.job_id,
+                delivery_id=self.id,
+                event_type='click',
+                recipient=self.recipient,
+                user_agent=user_agent,
+                ip_address=ip_address,
+                link_id=link_id
+            )
+            db.session.add(event)
+
+        # Update counters
+        self.job.click_count += 1
+        db.session.commit()
 
     def to_dict(self):
         """Convert delivery to dictionary."""
@@ -208,66 +214,4 @@ class EmailDelivery(BaseModel):
             'opened_at': self.opened_at.isoformat() if self.opened_at else None,
             'clicked_at': self.clicked_at.isoformat() if self.clicked_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
-        }
-
-    @classmethod
-    def get_engagement_metrics(cls, job_id: int):
-        """Get engagement metrics for a specific email job."""
-        total_delivered = cls.query.filter_by(
-            job_id=job_id,
-            status='sent'
-        ).count()
-
-        if total_delivered == 0:
-            return {
-                'open_rate': 0,
-                'click_rate': 0,
-                'total_opens': 0,
-                'total_clicks': 0,
-                'total_delivered': 0
-            }
-
-        total_opens = cls.query.filter_by(
-            cls.job_id == job_id,
-            cls.opened_at.isnot(None)
-        ).count()
-
-        total_clicks = cls.query.filter_by(
-            cls.job_id == job_id,
-            cls.clicked_at.isnot(None)
-        ).count()
-
-        return {
-            'open_rate': (total_opens / total_delivered) * 100,
-            'click_rate': (total_clicks / total_delivered) * 100,
-            'total_opens': total_opens,
-            'total_clicks': total_clicks,
-            'total_delivered': total_delivered
-        }
-
-    @classmethod
-    def get_delivery_time_stats(cls, job_id: int):
-        """Get delivery time statistics for a job."""
-        deliveries = cls.query.filter_by(job_id=job_id).all()
-        delivery_times = []
-
-        for delivery in deliveries:
-            if delivery.status == 'sent' and delivery.last_attempt and delivery.created_at:
-                delivery_time = (delivery.last_attempt -
-                                 delivery.created_at).total_seconds()
-                delivery_times.append(delivery_time)
-
-        if not delivery_times:
-            return {
-                'average_delivery_time': 0,
-                'min_delivery_time': 0,
-                'max_delivery_time': 0,
-                'total_deliveries': 0
-            }
-
-        return {
-            'average_delivery_time': sum(delivery_times) / len(delivery_times),
-            'min_delivery_time': min(delivery_times),
-            'max_delivery_time': max(delivery_times),
-            'total_deliveries': len(delivery_times)
         }
