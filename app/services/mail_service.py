@@ -1,17 +1,28 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List, Dict, Any
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from app.extensions import db
-from app.models import SMTPConfiguration, User
+from app.models import (
+    SMTPConfiguration, User, Template,
+    EmailDelivery, EmailJob
+)
 from app.utils.encryption import decrypt_value
 from flask import current_app
 from datetime import datetime, timezone
 import sqlalchemy.exc
+from app.services.template_service import TemplateRenderService
+from app.services.smtp_service import SMTPService
+from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
+from app.utils.logging import logger
+import uuid
 
 
 class MailService:
-    """Service for sending emails using configured SMTP servers."""
+    """Core service for email sending operations."""
+
+    def __init__(self):
+        self.template_renderer = TemplateRenderService()
 
     @staticmethod
     def get_smtp_config(user_id: int) -> Optional[SMTPConfiguration]:
@@ -25,26 +36,24 @@ class MailService:
             is_active=True
         ).first()
 
-    @staticmethod
-    def send_email(
+    def send_raw_email(
+        self,
         user_id: Optional[int],
         to_email: str,
         subject: str,
         body: str,
-        smtp_config: 'SMTPConfiguration'
+        smtp_config: Optional[SMTPConfiguration] = None,
+        is_system_email: bool = False
     ) -> Tuple[bool, Optional[str]]:
-        """Send an email using user's SMTP configuration or system
-        SMTP configuration.
-        For system emails, pass user_id=None and provide smtp_config.
+        """
+        Send a raw email (no template).
+        Core method for sending both system and user emails.
         """
         try:
-            current_app.logger.info(
+            logger.info(
                 f"Starting email send process to {to_email}")
 
-            # Determine if this is a system email
-            is_system_email = user_id is None
-
-            # Handle user emails
+            # Handle system vs user email configuration
             if not is_system_email:
                 user = User.query.get(user_id)
                 if not user:
@@ -52,7 +61,7 @@ class MailService:
 
                 # Get user's SMTP config if not provided
                 if not smtp_config:
-                    smtp_config = MailService.get_smtp_config(user_id)
+                    smtp_config = self.get_smtp_config(user_id)
                     if not smtp_config:
                         return False, "No active SMTP configuration found"
 
@@ -60,17 +69,14 @@ class MailService:
                 smtp_config = db.session.query(
                     SMTPConfiguration).with_for_update().get(smtp_config.id)
 
-                current_app.logger.info(f"Current SMTP stats - emails_sent_today: {
+                logger.info(f"Current SMTP stats - emails_sent_today: {
                                         smtp_config.emails_sent_today}, last_reset_date: {smtp_config.last_reset_date}")
-                current_app.logger.info(f"Current UTC date: {
+                logger.info(f"Current UTC date: {
                                         datetime.now(timezone.utc).date()}")
 
                 # Check daily limits for user SMTPs
-                needs_reset = smtp_config.needs_daily_reset()
-                current_app.logger.info(f"Needs daily reset: {needs_reset}")
-
-                if needs_reset:
-                    current_app.logger.info("Resetting daily counter to 0")
+                if smtp_config.needs_daily_reset():
+                    logger.info("Resetting daily counter to 0")
                     smtp_config.emails_sent_today = 0
                     smtp_config.last_reset_date = datetime.now(
                         timezone.utc).date()
@@ -87,12 +93,12 @@ class MailService:
                 from_email = smtp_config.from_email
 
             # Log SMTP configuration (excluding password)
-            current_app.logger.debug(f"Using SMTP Configuration:")
-            current_app.logger.debug(f"Host: {smtp_config.host}")
-            current_app.logger.debug(f"Port: {smtp_config.port}")
-            current_app.logger.debug(f"Username: {smtp_config.username}")
-            current_app.logger.debug(f"From Email: {from_email}")
-            current_app.logger.debug(f"Use TLS: {smtp_config.use_tls}")
+            logger.debug(f"Using SMTP Configuration:")
+            logger.debug(f"Host: {smtp_config.host}")
+            logger.debug(f"Port: {smtp_config.port}")
+            logger.debug(f"Username: {smtp_config.username}")
+            logger.debug(f"From Email: {from_email}")
+            logger.debug(f"Use TLS: {smtp_config.use_tls}")
 
             # Prepare email message
             msg = MIMEMultipart()
@@ -103,7 +109,7 @@ class MailService:
                 current_app.logger.debug(
                     f"Using formatted from_email: {from_email}")
             else:
-                display_name = "mailSage Support" if is_system_email else None
+                display_name = "Mailsage Support" if is_system_email else None
                 from_header = f"{display_name} <{from_email}>" if display_name else from_email
                 msg['From'] = from_header
                 current_app.logger.debug(
@@ -156,51 +162,134 @@ class MailService:
 
                 return True, None
 
-        except smtplib.SMTPAuthenticationError as e:
+        except Exception as e:
+            error_msg = self._handle_email_error(e, smtp_config)
+            return False, error_msg
+
+    def create_email_job(
+        self,
+        user_id: int,
+        recipients: List[Dict[str, Any]],
+        subject: str,
+        body: Optional[str] = None,
+        template_id: Optional[int] = None,
+        smtp_id: Optional[int] = None,
+        campaign_id: Optional[str] = None
+    ) -> Tuple[EmailJob, Optional[str]]:
+        """Create an email job for either templated or raw emails."""
+        try:
+            # Generate tracking ID for the job
+            tracking_id = str(uuid.uuid4())
+
+            # Create job record
+            job = EmailJob(
+                user_id=user_id,
+                template_id=template_id,
+                subject=subject,
+                body=body,  # Only for non-templated emails
+                status='pending',
+                recipient_count=len(recipients),
+                smtp_config_id=smtp_id,
+                campaign_id=campaign_id,
+                tracking_id=tracking_id,
+                meta_data={
+                    'smtp_strategy': 'specific' if smtp_id else 'default',
+                    'is_templated': template_id is not None
+                }
+            )
+            db.session.add(job)
+            db.session.flush()
+
+            # Create delivery records
+            deliveries = []
+            for recipient in recipients:
+                delivery = EmailDelivery(
+                    job_id=job.id,
+                    recipient=recipient['email'],
+                    variables=recipient.get(
+                        'variables', {}) if template_id else None,
+                    status='pending'
+                )
+                deliveries.append(delivery)
+
+            db.session.bulk_save_objects(deliveries)
+            db.session.commit()
+
+            return job, None
+
+        except Exception as e:
+            db.session.rollback()
+            return None, f"Failed to create email job: {str(e)}"
+
+    def validate_sending_quota(
+            self,
+            user_id: int,
+            recipient_count: int
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate if user has enough quota to send emails."""
+        user = User.query.get(user_id)
+        if not user:
+            return False, "User not found"
+
+        daily_limit = ROLE_CONFIGURATIONS[user.role]['limits'][
+            ResourceLimit.DAILY_EMAILS.value]
+        if daily_limit == -1:  # unlimited
+            return True, None
+
+        today_start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        sent_today = EmailJob.query.filter(
+            EmailJob.user_id == user_id,
+            EmailJob.created_at >= today_start
+        ).with_entities(db.func.sum(EmailJob.recipient_count)).scalar() or 0
+
+        if sent_today + recipient_count > daily_limit:
+            remaining = max(0, daily_limit - sent_today)
+            return False, f"Daily sending limit exceeded. Remaining quota: {remaining}"
+
+        return True, None
+
+    def _handle_email_error(
+        self,
+        error: Exception,
+        smtp_config: Optional[SMTPConfiguration]
+    ) -> str:
+        """Handle different types of email sending errors."""
+        if isinstance(error, smtplib.SMTPAuthenticationError):
             error_msg = "SMTP Authentication failed"
-            current_app.logger.error(f"{error_msg}: {str(e)}")
-            return False, error_msg
-
-        except smtplib.SMTPConnectError as e:
+        elif isinstance(error, smtplib.SMTPConnectError):
             error_msg = "Failed to connect to SMTP server"
-            current_app.logger.error(f"{error_msg}: {str(e)}")
-            return False, error_msg
-
-        except smtplib.SMTPException as e:
-            error_msg = f"SMTP error occurred: {str(e)}"
-            current_app.logger.error(error_msg)
-            return False, error_msg
-
-        except sqlalchemy.exc.SQLAlchemyError as e:
-            if user_id is not None:
-                db.session.rollback()
+        elif isinstance(error, smtplib.SMTPException):
+            error_msg = f"SMTP error occurred: {str(error)}"
+        elif isinstance(error, sqlalchemy.exc.SQLAlchemyError):
+            db.session.rollback()
+            if smtp_config:
                 try:
                     smtp_config.failure_count += 1
                     db.session.commit()
                 except:
                     db.session.rollback()
             error_msg = "Database error occurred"
-            current_app.logger.error(f"{error_msg}: {str(e)}")
-            return False, error_msg
+        else:
+            error_msg = f"Unexpected error: {str(error)}"
+            logger.exception("Full traceback:")
 
-        except Exception as e:
-            error_msg = f"Unexpected error: {str(e)}"
-            current_app.logger.error(error_msg)
-            # This logs the full stack trace
-            current_app.logger.exception("Full traceback:")
-            return False, error_msg
+        logger.error(f"{error_msg}: {str(error)}")
+        return error_msg
+
 
     @staticmethod
     def send_test_email(
-            smtp_config: SMTPConfiguration) -> Tuple[bool, Optional[str]]:
+        smtp_config: SMTPConfiguration
+    ) -> Tuple[bool, Optional[str]]:
         """Send a test email using specific SMTP configuration."""
-        user = User.query.get(smtp_config.user_id)
-        if not user:
-            return False, "User not found"
+        service = MailService()
 
-        return MailService.send_email(
-            user_id=user.id,
-            to_email=user.email,
+        return service.send_raw_email(
+            user_id=smtp_config.user_id,
+            to_email=smtp_config.from_email,
             subject="MailSage SMTP Test",
             body="Your SMTP configuration is working correctly!",
             smtp_config=smtp_config

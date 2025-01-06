@@ -31,7 +31,7 @@ class UserService:
             user.add_notification(
                 title="Profile Updated",
                 message=f"Profile has been updated",
-                type="success",
+                type="info",
                 category="profile",
                 meta_data={"profile_id": user.id}
             )
@@ -122,7 +122,7 @@ class UserService:
             user.add_notification(
                 title="Template Restored",
                 message=f"Template '{template.name}' has been restored",
-                type="success",
+                type="info",
                 category="template",
                 meta_data={"template_id": template.id}
             )
@@ -170,7 +170,7 @@ class UserService:
                 title="SMTP Configuration Restored",
                 message=f"SMTP configuration '{
                     config.name}' has been restored",
-                type="success",
+                type="info",
                 category="smtp",
                 meta_data={"config_id": config.id}
             )
@@ -297,7 +297,7 @@ class UserService:
                 title="All Deleted Templates Removed",
                 message=f"{
                     count} deleted templates have been permanently removed",
-                type="warning",
+                type="critical",
                 category="template",
                 meta_data={"templates_count": count}
             )
@@ -337,7 +337,7 @@ class UserService:
                 title="All Deleted SMTP Configurations Removed",
                 message=f"{
                     count} deleted SMTP configurations have been permanently removed",
-                type="warning",
+                type="critical",
                 category="smtp",
                 meta_data={"configs_count": count}
             )

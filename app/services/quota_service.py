@@ -3,7 +3,7 @@ from typing import Tuple
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db, redis_client
-from app.models import User, Template, APIKey
+from app.models import User, Template, ApiKey
 from app.utils.logging import logger
 from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
 
@@ -50,7 +50,7 @@ class QuotaService:
         current_count = {
             ResourceLimit.TEMPLATES.value: Template.query.filter_by(
                 user_id=user_id).count(),
-            ResourceLimit.API_KEYS.value: APIKey.query.filter_by(
+            ResourceLimit.API_KEYS.value: ApiKey.query.filter_by(
                 user_id=user_id, is_active=True).count(),
         }.get(resource_type, 0)
 

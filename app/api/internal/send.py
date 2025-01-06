@@ -6,7 +6,7 @@ from app.models import User, EmailJob, EmailDelivery, SMTPConfiguration
 from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit, Permission
 from app.utils.decorators import permission_required, require_verified_email
 from app.tasks.email_tasks import send_single_email_task
-from app.tasks.email_tasks import send_batch_emails_task
+from app.tasks.email_tasks import process_email_batch
 from datetime import datetime, timezone
 from sqlalchemy import func
 from typing import List
@@ -183,7 +183,7 @@ def send_batch_email():
     db.session.commit()
 
     # Queue the batch email task
-    task = send_batch_emails_task.delay(job_id=job.id)
+    task = process_email_batch.delay(job_id=job.id)
 
     return jsonify({
         "message": "Batch email job queued successfully",

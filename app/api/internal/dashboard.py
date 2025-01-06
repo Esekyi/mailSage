@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.extensions import db
-from app.models import User, Template, SMTPConfiguration, APIKey, EmailJob
+from app.models import User, Template, EmailJob
 from app.utils.decorators import require_verified_email
 from sqlalchemy import func, or_
 from datetime import datetime, timezone, timedelta

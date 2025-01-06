@@ -204,7 +204,6 @@ def test_smtp_config(config_id: int):
     if int(config.user_id) != int(get_jwt_identity()):
         return jsonify({"error": "Unauthorized"}), 403
 
-
     # Step 1: Test SMTP Connection
     current_app.logger.info(
         f"Starting comprehensive SMTP test for configuration {config.id}")
@@ -223,10 +222,10 @@ def test_smtp_config(config_id: int):
     user = User.query.get(config.user_id)
     to_email = request.json.get('to_email', user.email)
 
-    success, error = MailService.send_email(
+    success, error = MailService.send_raw_email(
         user_id=user.id,
         to_email=to_email,
-        subject="mailSage SMTP Test",
+        subject="Mailsage SMTP Test",
         body=f"""
         <h2>SMTP Configuration Test</h2>
         <p>Your SMTP configuration has been tested successfully!</p>

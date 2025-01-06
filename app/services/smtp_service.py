@@ -138,7 +138,7 @@ class SMTPService:
             user.add_notification(
                 title="SMTP Configuration Created",
                 message=f"SMTP configuration {config.name} has been created",
-                type="success",
+                type="info",
                 category="smtp",
                 meta_data={"config_id": config.id}
             )
@@ -230,7 +230,7 @@ class SMTPService:
             user.add_notification(
                 title="SMTP Configuration Deleted",
                 message=f"SMTP configuration {config.name} has been deleted",
-                type="warning",
+                type="critical",
                 category="smtp",
                 meta_data={"config_id": config.id}
             )
@@ -322,7 +322,7 @@ class SMTPService:
                 f"{'SIZE limit: ' + str(size_limit)
                    if size_limit else 'No size limit'}"
                 f"{', VERIFY' if config.from_email else ''}",
-                type="success",
+                type="attention",
                 category="smtp",
                 meta_data={
                     "config_id": config.id,
