@@ -26,7 +26,6 @@ iniconfig==2.0.0
 itsdangerous==2.2.0
 Jinja2==3.1.4
 kombu==5.4.2
--e git+https://Esekyi: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@github.com/Esekyi/mailsage.git@e19723feacfb062ba47a091a6b2a1b305af0374f#egg=mailsage
 Mako==1.3.8
 Markdown==3.7
 MarkupSafe==3.0.2
