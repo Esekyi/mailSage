@@ -2,7 +2,9 @@
 
 📧 Mailsage is a robust, centralized Email-as-a-Service (EaaS) platform that simplifies email integrations and resource management. This project is designed to provide developers with a seamless API to handle email sending, templates, and API key generation, with role-based access control and customizable resource limits.
 
----
+> [!TIP]  
+> UI Dashboard repo can be found at [Mailsage Web](https://github.com/Esekyi/mailSage-web).
+> MVP will be deployed shortly on https://dashboard.mailsage.io.
 
 ## **Features**
 
@@ -43,7 +45,7 @@
   - Comprehensive test suite for authentication, resource limits, and role enforcement.
   - Verified across scenarios with `pytest`.
 
----
+
 
 ## **🚀 Installation**
 
@@ -91,7 +93,7 @@
 
 6. ⚡️ Access the app at: `http://127.0.0.1:5000`
 
----
+
 
 ## **📣 API Endpoints**
 
@@ -178,7 +180,7 @@
 
   - **Method**: DELETE
 
----
+
 
 ## **Testing**
 
@@ -202,7 +204,7 @@ To run the test suite:
    ========================================================= 28 passed in 3.73s =========================================================
    ```
 
----
+
 
 ## **🔧 Configuration**
 
@@ -214,7 +216,7 @@ Set the following environment variables in `.env`:
 - `FLASK_ENV=development`
 - `DATABASE_URL=postgresql://username:password@localhost:5432/mailsage`
 
----
+
 
 ## **⚙️ Future Improvements**
 
@@ -223,7 +225,7 @@ Set the following environment variables in `.env`:
 - **Integrations**: Add support for third-party services (e.g., Twilio, AWS SES).
 - **Subscription Plans**: Implement payment systems for role upgrades.
 
----
+
 
 ## **📚 Contributing**
 
@@ -248,7 +250,7 @@ Set the following environment variables in `.env`:
 
 5. Open a pull request.
 
----
+
 
 ## **🔒 License**
 
