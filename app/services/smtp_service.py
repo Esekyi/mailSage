@@ -107,6 +107,10 @@ class SMTPService:
             Tuple of (success: bool, error_message: Optional[str])
         """
         try:
+            user = User.query.get(user_id)
+            if not user:
+                return None, "User not found"
+
             # If this is set as default, unset any existing default
             if config_data.get('is_default'):
                 SMTPConfiguration.query.filter_by(
@@ -134,7 +138,7 @@ class SMTPService:
             db.session.add(config)
 
             # Add notification before creation
-            user = User.query.get(user_id)
+            user = User.query.get(config.user_id)
             user.add_notification(
                 title="SMTP Configuration Created",
                 message=f"SMTP configuration {config.name} has been created",

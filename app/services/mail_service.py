@@ -50,8 +50,11 @@ class MailService:
         Core method for sending both system and user emails.
         """
         try:
-            logger.info(
-                f"Starting email send process to {to_email}")
+            logger.info(f"Starting email send process to {to_email}")
+
+            # Ensure body is a string, not bytes
+            if isinstance(body, bytes):
+                body = body.decode('utf-8')
 
             # Handle system vs user email configuration
             if not is_system_email:
@@ -70,9 +73,9 @@ class MailService:
                     SMTPConfiguration).with_for_update().get(smtp_config.id)
 
                 logger.info(f"Current SMTP stats - emails_sent_today: {
-                                        smtp_config.emails_sent_today}, last_reset_date: {smtp_config.last_reset_date}")
+                            smtp_config.emails_sent_today}, last_reset_date: {smtp_config.last_reset_date}")
                 logger.info(f"Current UTC date: {
-                                        datetime.now(timezone.utc).date()}")
+                            datetime.now(timezone.utc).date()}")
 
                 # Check daily limits for user SMTPs
                 if smtp_config.needs_daily_reset():
@@ -91,14 +94,6 @@ class MailService:
                     return False, "SMTP configuration required for system emails"
 
                 from_email = smtp_config.from_email
-
-            # Log SMTP configuration (excluding password)
-            logger.debug(f"Using SMTP Configuration:")
-            logger.debug(f"Host: {smtp_config.host}")
-            logger.debug(f"Port: {smtp_config.port}")
-            logger.debug(f"Username: {smtp_config.username}")
-            logger.debug(f"From Email: {from_email}")
-            logger.debug(f"Use TLS: {smtp_config.use_tls}")
 
             # Prepare email message
             msg = MIMEMultipart()
@@ -178,6 +173,30 @@ class MailService:
     ) -> Tuple[EmailJob, Optional[str]]:
         """Create an email job for either templated or raw emails."""
         try:
+            # Validate that either template_id or body is provided
+            if not template_id and not body:
+                return None, "Either template_id or body must be provided"
+
+            # If using template, get it and validate
+            if template_id:
+                template = Template.query.filter_by(
+                    id=template_id,
+                    user_id=user_id,
+                    is_active=True,
+                    deleted_at=None
+                ).first()
+
+                if not template:
+                    return None, "Template not found or inactive"
+
+                # Use template content as initial body for templated emails
+                # Ensure the content is a string, not bytes
+                template_content = template.html_content
+                if isinstance(template_content, bytes):
+                    body = template_content.decode('utf-8')
+                else:
+                    body = template_content
+
             # Generate tracking ID for the job
             tracking_id = str(uuid.uuid4())
 
@@ -186,7 +205,7 @@ class MailService:
                 user_id=user_id,
                 template_id=template_id,
                 subject=subject,
-                body=body,  # Only for non-templated emails
+                body=body,  # Now body should be a string, not bytes
                 status='pending',
                 recipient_count=len(recipients),
                 smtp_config_id=smtp_id,
