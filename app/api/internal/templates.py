@@ -1,21 +1,18 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.utils.decorators import require_verified_email
-from app.extensions import db
 from marshmallow import Schema, fields, validate, ValidationError
-from app.models import User, Template
-from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
+from app.models import Template
+from app.utils.roles import ResourceLimit
 from app.utils.decorators import check_resource_limits
 from app.services.template_service import TemplateService
-from app.utils.pagination import paginate
 from app.services.search_service import TemplateSearchService
-from sqlalchemy import or_
-from flask import current_app
 
 class TemplateSchema(Schema):
     name = fields.Str(required=True, validate=validate.Length(min=1, max=255))
     description = fields.Str(required=False, allow_none=True)
     html_content = fields.Str(required=True)
+    tags = fields.List(fields.Str(), required=False, allow_none=True)
 
 
 class TemplateUpdateSchema(TemplateSchema):
@@ -46,14 +43,25 @@ def create_template():
     template, error = TemplateService.create_template(
         user_id=user_id,
         name=data['name'],
+        tags=data.get('tags'),
         description=data.get('description'),
-        html_content=data['html_content'],
+        html_content=data['html_content']
     )
 
     if error:
         return jsonify({'error': error}), 400
 
-    return jsonify(template.to_api_response()), 201
+    response = template.to_api_response()
+    response['version_info'].update({
+        'is_initial_version': True,
+        'has_versions': True,
+        'versions_available': 1,
+        'versions_count': 1,
+        'current_version': 1,
+        'latest_version': 1
+    })
+
+    return jsonify(response), 201
 
 
 @templates_bp.route('/preview', methods=['POST'], strict_slashes=False)
@@ -97,6 +105,7 @@ def update_template(template_id: int):
         template_id=template_id,
         user_id=user_id,
         name=data['name'],
+        tags=data.get('tags'),
         html_content=data['html_content'],
         description=data.get('description'),
         change_summary=data.get('change_summary')
@@ -112,44 +121,94 @@ def update_template(template_id: int):
 @jwt_required()
 @require_verified_email
 def list_templates():
-    """List all active templates for the user."""
+    """List all templates for the current user."""
     user_id = get_jwt_identity()
     search_query = request.args.get('search', '').strip()
+    tags = request.args.getlist('tags')  # Support multiple tags
+    category = request.args.get('category')
 
-    # Start with base query
-    if search_query:
-        # Use search service when search parameter is present
-        query = TemplateSearchService.search_templates(search_query, user_id)
+    # Initialize base query
+    if search_query or tags:
+        # Use search service for search and/or tag filtering
+        if search_query and tags:
+            templates = TemplateSearchService.search_templates_combined(
+                search_query, tags, user_id)
+        elif search_query:
+            templates = TemplateSearchService.search_templates(
+                search_query, user_id)
+        else:
+            # Only tag filtering
+            templates = []
+            for tag in tags:
+                templates.extend(
+                    TemplateSearchService.search_templates_by_tag(tag, user_id))
+            # Remove duplicates while preserving order
+            templates = list(dict.fromkeys(templates))
     else:
-        # Normal query without search
-        query = Template.query.filter_by(
+        # No search or tags, use regular query
+        templates = Template.query.filter_by(
             user_id=user_id,
             is_active=True,
             deleted_at=None
         )
 
-    # Apply sorting
-    sort_by = request.args.get('sort_by', 'created_at')
-    sort_order = request.args.get('sort_order', 'desc')
+        # Apply category filter if provided
+        if category:
+            templates = templates.filter(Template.category == category)
 
-    if hasattr(Template, sort_by):
-        sort_column = getattr(Template, sort_by)
-        if sort_order == 'desc':
-            query = query.order_by(sort_column.desc())
-        else:
-            query = query.order_by(sort_column.asc())
-    else:
-        query = query.order_by(Template.created_at.desc())
+        # Apply sorting
+        sort_by = request.args.get('sort_by', 'updated_at')
+        sort_order = request.args.get('sort_order', 'desc')
 
-    # Use the pagination utility
-    paginated = paginate(query, schema=None)
+        if sort_by in ['name', 'created_at', 'updated_at']:
+            sort_column = getattr(Template, sort_by)
+            if sort_order == 'desc':
+                templates = templates.order_by(sort_column.desc())
+            else:
+                templates = templates.order_by(sort_column.asc())
+
+        # Execute query
+        templates = templates.all()
+
+    # Paginate results
+    page = request.args.get('page', 1, type=int)
+    per_page = min(request.args.get('per_page', 10, type=int), 100)
+
+    # Manual pagination for search results
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+
+    total_items = len(templates)
+    paginated_templates = templates[start_idx:end_idx]
+
+    # Prepare response with version information
+    templates_response = []
+    for template in paginated_templates:
+        template_data = template.to_api_response()
+        # Count versions correctly
+        # Count of archived versions
+        versions_in_history = len(template.versions)
+        template_data['version_info'].update({
+            'has_versions': True,  # If we have a template, it always has at least one version
+            'versions_count': versions_in_history,  # Number of archived versions
+            # Archived versions + current version
+            'versions_available': versions_in_history + 1,
+            'current_version': template.version,  # Current version number
+            'latest_version': template.version,  # Current version is always latest
+            'last_updated': template.updated_at.isoformat() if template.updated_at else None
+        })
+        templates_response.append(template_data)
 
     return jsonify({
-        "items": [template.to_api_response() for template in paginated.items],
-        "total": paginated.total,
-        "page": paginated.page,
-        "per_page": paginated.per_page,
-        "total_pages": paginated.total_pages
+        'templates': templates_response,
+        'pagination': {
+            'total': total_items,
+            'pages': (total_items + per_page - 1) // per_page,
+            'current_page': page,
+            'per_page': per_page,
+            'has_next': end_idx < total_items,
+            'has_prev': page > 1
+        }
     }), 200
 
 
@@ -174,7 +233,6 @@ def get_template(template_id):
 @require_verified_email
 def get_template_versions(template_id):
     """Get all versions of a template."""
-
     user_id = get_jwt_identity()
 
     template = TemplateService.get_template(
@@ -185,10 +243,10 @@ def get_template_versions(template_id):
     if not template:
         return jsonify({"error": "Template not found"}), 404
 
-    versions = template.get_version_history(template.base_template_id)
+    versions = template.get_version_history()
 
     return jsonify({
-        "versions": [v.to_api_response() for v in versions]
+        "versions": versions
     }), 200
 
 
@@ -221,3 +279,92 @@ def delete_template(template_id):
         return jsonify({"error": error}), 400 if "not found" not in error else 404
 
     return jsonify({"message": "Template deleted successfully"}), 200
+
+
+@templates_bp.route('/<int:template_id>/versions/<int:version>', methods=['GET'])
+@jwt_required()
+@require_verified_email
+def get_specific_version(template_id: int, version: int):
+    """Get a specific version of a template."""
+    user_id = get_jwt_identity()
+
+    template_version = TemplateService.get_template_version(
+        template_id=template_id,
+        version=version,
+        user_id=user_id
+    )
+
+    if not template_version:
+        return jsonify({"error": "Template version not found"}), 404
+
+    return jsonify({
+        "version": template_version.version,
+        "html_content": template_version.html_content,
+        "created_at": template_version.created_at.isoformat(),
+        "meta_data": template_version.meta_data
+    }), 200
+
+
+@templates_bp.route('/<int:template_id>/versions/<int:version>/revert', methods=['POST'])
+@jwt_required()
+@require_verified_email
+def revert_to_version(template_id: int, version: int):
+    """Revert a template to a specific version."""
+    user_id = get_jwt_identity()
+
+    template, error = TemplateService.revert_to_version(
+        template_id=template_id,
+        version=version,
+        user_id=user_id
+    )
+
+    if error:
+        return jsonify({"error": error}), 400 if "not found" not in error else 404
+
+    return jsonify(template.to_api_response()), 200
+
+
+@templates_bp.route('/<int:template_id>/versions/compare', methods=['GET'])
+@jwt_required()
+@require_verified_email
+def compare_versions(template_id: int):
+    """Compare two versions of a template."""
+    user_id = get_jwt_identity()
+    version1 = request.args.get('version1', type=int)
+    version2 = request.args.get('version2', type=int)
+
+    if not version1 or not version2:
+        return jsonify({"error": "Both version1 and version2 parameters are required"}), 400
+
+    comparison, error = TemplateService.compare_versions(
+        template_id=template_id,
+        version1=version1,
+        version2=version2,
+        user_id=user_id
+    )
+
+    if error:
+        return jsonify({"error": error}), 400 if "not found" not in error else 404
+
+    return jsonify(comparison), 200
+
+
+@templates_bp.route('/<int:template_id>/versions/available', methods=['GET'])
+@jwt_required()
+@require_verified_email
+def get_available_versions(template_id: int):
+    """Get all versions available for comparison."""
+    user_id = get_jwt_identity()
+
+    versions, error = TemplateService.get_available_versions(
+        template_id=template_id,
+        user_id=user_id
+    )
+
+    if error:
+        return jsonify({"error": error}), 400 if "not found" not in error else 404
+
+    return jsonify({
+        "versions": versions,
+        "total_versions": len(versions)
+    }), 200
