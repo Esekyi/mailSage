@@ -1,7 +1,8 @@
 from typing import Dict, Optional, Tuple, List, Set, Any
 from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db
-from app.models import Template, TemplateStats, User
+from app.models import Template, TemplateStats, User, TemplateVersion
+from app.services.search_service import TemplateSearchService
 from app.utils.logging import logger
 from datetime import datetime, timezone
 from bs4 import BeautifulSoup
@@ -118,14 +119,14 @@ class TemplateService:
     def __init__(self):
         self.renderer = TemplateRenderService()
 
-    def render_template_for_send(self, template_id: int, variables: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+    def render_template_for_send(self, template_id: int, user_id: int, variables: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         """
         Render a template for email sending with variable validation and caching.
 
         Returns:
             Tuple of (rendered_content, error_message)
         """
-        template = self.get_template(template_id)
+        template = self.get_template(template_id, user_id)
         if not template:
             return None, "Template not found"
 
@@ -158,7 +159,8 @@ class TemplateService:
 
     @staticmethod
     def create_template(user_id: int, name: str, html_content: str,
-                        description: Optional[str] = None) -> Tuple[Optional[Template], Optional[str]]:
+                        description: Optional[str] = None,
+                        tags: Optional[List[str]] = None) -> Tuple[Optional[Template], Optional[str]]:
         """
         Create a new template.
 
@@ -167,6 +169,7 @@ class TemplateService:
             name: Template name
             html_content: HTML content of the template
             description: Optional template description
+            tags: Optional list of tags
 
         Returns:
             Tuple of (Template object or None, error message or None)
@@ -178,16 +181,25 @@ class TemplateService:
             if not is_valid:
                 return None, error
 
+            # Create the template with initial version
             template = Template(
                 user_id=user_id,
                 name=name,
                 html_content=html_content,
+                tags=tags,
                 description=description,
-                version=1,
-                is_active=True
+                version=1,  # Initial version is 1
+                is_active=True,
+                meta_data={
+                    'initial_version': True,
+                    'created_at': datetime.now(timezone.utc).isoformat()
+                }
             )
 
+            # Update search vector
+            TemplateSearchService.update_search_vector(template)
             db.session.add(template)
+            db.session.commit()  # Commit to get template.id
 
             # Add notification
             user = User.query.get_or_404(user_id)
@@ -196,11 +208,13 @@ class TemplateService:
                 message=f"Template '{template.name}' has been created",
                 type="info",
                 category="template",
-                meta_data={"template_id": template.id}
+                meta_data={
+                    "template_id": template.id,
+                    "version": template.version
+                }
             )
 
             db.session.commit()
-
             return template, None
 
         except SQLAlchemyError as e:
@@ -213,10 +227,9 @@ class TemplateService:
                         html_content: str,
                         change_summary: Optional[str] = None,
                         name: Optional[str] = None,
+                        tags: Optional[List[str]] = None,
                         description: Optional[str] = None) -> Tuple[Optional[Template], Optional[str]]:
-        """
-        Update a template by creating a new version.
-        """
+        """Update an existing template by updating the current version and storing history."""
         try:
             # Validate HTML first
             is_valid, error = TemplateService.validate_template_html(
@@ -224,42 +237,68 @@ class TemplateService:
             if not is_valid:
                 return None, error
 
-            current_template = Template.query.filter_by(
+            template = Template.query.filter_by(
                 id=template_id,
                 user_id=user_id,
                 is_active=True
             ).first()
 
-            if not current_template:
+            if not template:
                 return None, "Template not found"
 
-            # Create new version
-            new_version = current_template.create_new_version(
-                html_content=html_content,
-                change_summary=change_summary
+            # Store the current version in template_versions
+            current_version = TemplateVersion(
+                template_id=template_id,
+                version=template.version,  # Archive current version number
+                html_content=template.html_content,
+                change_summary=change_summary,
+                meta_data={
+                    "name": template.name,
+                    "description": template.description,
+                    "archived_at": datetime.now(timezone.utc).isoformat()
+                },
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
             )
+            db.session.add(current_version)
 
-            # Update other fields if provided
+            # Update the current template
             if name:
-                new_version.name = name
+                template.name = name
             if description:
-                new_version.description = description
+                template.description = description
+            if tags:
+                template.tags = tags
 
-            db.session.add(new_version)
+            template.html_content = html_content
+            template.version += 1  # Simply increment version by 1
+            template.updated_at = datetime.now(timezone.utc)
+            template.meta_data = {
+                **(template.meta_data or {}),
+                'change_summary': change_summary,
+                'previous_version': template.version - 1
+            }
 
-            # Update notification
+            # Update search vector
+            TemplateSearchService.update_search_vector(template)
+
+            # Add notification
             user = User.query.get_or_404(user_id)
             user.add_notification(
                 title="Template Updated",
-                message=f"Template '{new_version.name}' has been updated",
+                message=f"Template '{template.name}' has been updated to version {
+                    template.version}",
                 type="success",
                 category="template",
-                meta_data={"template_id": new_version.id}
+                meta_data={
+                    "template_id": template.id,
+                    "version": template.version,
+                    "previous_version": template.version - 1
+                }
             )
 
             db.session.commit()
-
-            return new_version, None
+            return template, None
 
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -335,9 +374,9 @@ class TemplateService:
 
     @staticmethod
     def delete_template(template_id: int, user_id: int) -> Tuple[bool, Optional[str]]:
-        """Soft delete a template and all its versions."""
+        """Soft delete a template and its versions."""
         try:
-            logger.info(f"Attempting to delete template {
+            logger.info(f"Soft deleting template {
                         template_id} for user {user_id}")
 
             template = Template.query.filter_by(
@@ -353,31 +392,17 @@ class TemplateService:
 
             now = datetime.now(timezone.utc)
 
-            # Start with the base template
-            templates_to_delete = [template]
+            # Soft delete the template
+            template.deleted_at = now
+            template.deleted_by = user_id
+            template.is_active = False
 
-            # Get all versions if this is a base template
-            if template.base_template_id:
-                logger.debug(
-                    f"Finding versions for base template {template_id}")
-                versions = Template.query.filter_by(
-                    base_template_id=template_id,
-                    deleted_at=None
-                ).all()
-                templates_to_delete.extend(versions)
-
-            # Soft delete all versions
-            for t in templates_to_delete:
-                logger.debug(f"Soft deleting template {t.id}")
-                t.deleted_at = now
-                t.deleted_by = user_id
-                t.is_active = False
-
-            # Log the deletion in template history if you have that
-            t.meta_data = {
-                **(t.meta_data or {}),
+            # Update metadata
+            template.meta_data = {
+                **(template.meta_data or {}),
                 'deleted_at': now.isoformat(),
-                'deleted_by': user_id
+                'deleted_by': user_id,
+                'version_at_deletion': template.version
             }
 
             # Add notification
@@ -387,26 +412,29 @@ class TemplateService:
                 message=f"Template '{template.name}' has been deleted",
                 type="critical",
                 category="template",
-                meta_data={"template_id": template.id}
+                meta_data={
+                    "template_id": template.id,
+                    "version": template.version
+                }
             )
 
             db.session.commit()
-            logger.info(f"Successfully deleted template {template_id} and {
-                        len(templates_to_delete)-1} versions")
+            logger.info(f"Successfully soft deleted template {
+                        template_id} with {len(template.versions)} versions")
             return True, None
 
         except SQLAlchemyError as e:
             db.session.rollback()
             error_msg = str(e)
-            logger.error(f"Database error deleting template {
-                template_id}: {error_msg}")
+            logger.error(f"Database error soft deleting template {
+                         template_id}: {error_msg}")
             return False, "Failed to delete template"
 
         except Exception as e:
             db.session.rollback()
             error_msg = str(e)
             logger.error(f"Unexpected error deleting template {
-                template_id}: {error_msg}")
+                         template_id}: {error_msg}")
             return False, "An unexpected error occurred"
 
     @staticmethod
@@ -430,15 +458,6 @@ class TemplateService:
             db.session.rollback()
             logger.error(f"Error publishing template: {str(e)}")
             return False, "Failed to publish template"
-
-    @staticmethod
-    def get_template_versions(base_template_id: int, user_id: int) -> List[Template]:
-        """Get all versions of a template."""
-        return Template.query.filter_by(
-            base_template_id=base_template_id,
-            user_id=user_id,
-            deleted_at=None
-        ).order_by(Template.version.desc()).all()
 
     @staticmethod
     def get_templates_by_category(user_id: int, category: str) -> List[Template]:
@@ -493,3 +512,216 @@ class TemplateService:
             template.html_content,
             test_variables
         )
+
+    @staticmethod
+    def get_template_version(template_id: int, version: int, user_id: int) -> Optional[TemplateVersion]:
+        """Get a specific version of a template."""
+        template = Template.query.filter_by(
+            id=template_id,
+            user_id=user_id,
+            is_active=True
+        ).first()
+
+        if not template:
+            return None
+
+        return TemplateVersion.query.filter_by(
+            template_id=template_id,
+            version=version
+        ).first()
+
+    @staticmethod
+    def revert_to_version(template_id: int, version: int, user_id: int) -> Tuple[Optional[Template], Optional[str]]:
+        """Revert a template to a specific version."""
+        try:
+            template = Template.query.filter_by(
+                id=template_id,
+                user_id=user_id,
+                is_active=True
+            ).first()
+
+            if not template:
+                return None, "Template not found"
+
+            # Don't revert if already at the requested version
+            if template.version == version:
+                return None, "Template is already at this version"
+
+            target_version = TemplateVersion.query.filter_by(
+                template_id=template_id,
+                version=version
+            ).first()
+
+            if not target_version:
+                return None, f"Version {version} not found"
+
+            # Get the next version number for archiving
+            next_version = db.session.query(db.func.max(TemplateVersion.version)).filter(
+                TemplateVersion.template_id == template_id
+            ).scalar() or 0
+            next_version += 1
+
+            # Archive current version with the next version number
+            current_version = TemplateVersion(
+                template_id=template_id,
+                version=next_version,
+                html_content=template.html_content,
+                change_summary=f"Auto-archived before reverting to version {
+                    version}",
+                meta_data={
+                    "name": template.name,
+                    "description": template.description,
+                    "archived_at": datetime.now(timezone.utc).isoformat()
+                },
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc)
+            )
+            db.session.add(current_version)
+
+            # Update template with target version content
+            template.html_content = target_version.html_content
+            template.version = next_version + 1  # Set to next version after archive
+            template.updated_at = datetime.now(timezone.utc)
+            template.meta_data = {
+                **(template.meta_data or {}),
+                'reverted_from_version': version,
+                'revert_date': datetime.now(timezone.utc).isoformat()
+            }
+
+            # Add notification
+            user = User.query.get_or_404(user_id)
+            user.add_notification(
+                title="Template Reverted",
+                message=f"Template '{
+                    template.name}' has been reverted to version {version}",
+                type="info",
+                category="template",
+                meta_data={
+                    "template_id": template.id,
+                    "current_version": template.version,
+                    "reverted_from": version
+                }
+            )
+
+            db.session.commit()
+            return template, None
+
+        except SQLAlchemyError as e:
+            db.session.rollback()
+            logger.error(f"Error reverting template: {str(e)}")
+            return None, "Failed to revert template"
+
+    @staticmethod
+    def compare_versions(template_id: int, version1: int, version2: int, user_id: int) -> Tuple[Optional[Dict], Optional[str]]:
+        """Compare two versions of a template."""
+        try:
+            template = Template.query.filter_by(
+                id=template_id,
+                user_id=user_id,
+                is_active=True
+            ).first()
+
+            if not template:
+                return None, "Template not found"
+
+            # For version1, check if it's the current version
+            if version1 == template.version:
+                v1_content = template.html_content
+                v1_created_at = template.updated_at or template.created_at
+                v1_meta = template.meta_data
+            else:
+                v1 = TemplateVersion.query.filter_by(
+                    template_id=template_id,
+                    version=version1
+                ).first()
+                if not v1:
+                    return None, f"Version {version1} not found"
+                v1_content = v1.html_content
+                v1_created_at = v1.created_at
+                v1_meta = v1.meta_data
+
+            # For version2, check if it's the current version
+            if version2 == template.version:
+                v2_content = template.html_content
+                v2_created_at = template.updated_at or template.created_at
+                v2_meta = template.meta_data
+            else:
+                v2 = TemplateVersion.query.filter_by(
+                    template_id=template_id,
+                    version=version2
+                ).first()
+                if not v2:
+                    return None, f"Version {version2} not found"
+                v2_content = v2.html_content
+                v2_created_at = v2.created_at
+                v2_meta = v2.meta_data
+
+            # Compare the versions
+            return {
+                'version1': {
+                    'version': version1,
+                    'html_content': v1_content,
+                    'created_at': v1_created_at.isoformat(),
+                    'meta_data': v1_meta
+                },
+                'version2': {
+                    'version': version2,
+                    'html_content': v2_content,
+                    'created_at': v2_created_at.isoformat(),
+                    'meta_data': v2_meta
+                },
+                'template_name': template.name,
+                'current_version': template.version
+            }, None
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error comparing versions: {str(e)}")
+            return None, "Failed to compare versions"
+
+    @staticmethod
+    def get_available_versions(template_id: int, user_id: int) -> Tuple[List[Dict], Optional[str]]:
+        """
+        Get all available versions that can be compared.
+
+        Returns:
+            Tuple of (List of version info, error message if any)
+        """
+        try:
+            template = Template.query.filter_by(
+                id=template_id,
+                user_id=user_id,
+                is_active=True
+            ).first()
+
+            if not template:
+                return [], "Template not found"
+
+            # Get all archived versions
+            archived_versions = TemplateVersion.query.filter_by(
+                template_id=template_id
+            ).order_by(TemplateVersion.version.asc()).all()
+
+            versions = []
+
+            # Add archived versions
+            for version in archived_versions:
+                versions.append({
+                    'version': version.version,
+                    'created_at': version.created_at.isoformat(),
+                    'change_summary': version.change_summary,
+                    'is_current': False
+                })
+
+            # Add current version
+            versions.append({
+                'version': template.version,
+                'created_at': template.updated_at.isoformat() if template.updated_at else template.created_at.isoformat(),
+                'change_summary': template.meta_data.get('change_summary') if template.meta_data else None,
+                'is_current': True
+            })
+
+            return versions, None
+
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting available versions: {str(e)}")
+            return [], "Failed to get versions"
