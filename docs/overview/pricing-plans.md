@@ -4,11 +4,9 @@ category: Overview
 order: 3
 ---
 
-# Pricing & Plans
-
 Choose the plan that fits your needs. All plans include our core features with different usage limits.
 
-## Available Plans
+## Available Plans {#available-plans}
 
 ### Free Tier
 
@@ -38,7 +36,7 @@ Choose the plan that fits your needs. All plans include our core features with d
 - Custom features
 - SLA guarantees
 
-## Feature Comparison
+## Feature Comparison {#feature-comparison}
 
 | Feature | Free | Pro | Enterprise |
 |---------|------|-----|------------|
@@ -50,7 +48,7 @@ Choose the plan that fits your needs. All plans include our core features with d
 | Support | Community | Priority | Dedicated |
 | SLA | ✗ | ✗ | ✓ |
 
-## Usage Limits
+## Usage Limits {#usage-limits}
 
 ### Rate Limits
 
@@ -64,7 +62,7 @@ Choose the plan that fits your needs. All plans include our core features with d
 - Pro: 20 concurrent
 - Enterprise: Custom limit
 
-## Support Options
+## Support Options {#support-options}
 
 ### Free Tier
 

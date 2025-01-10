@@ -1,20 +1,19 @@
 ---
 title: Getting Started with MailSage
 category: Overview
+category_order: 1
 order: 2
 ---
-
-# Getting Started with MailSage
 
 Get up and running with MailSage in minutes. This guide will help you start sending emails through our API.
 
 ## Quick Start
 
-### 1. Sign Up
+### 1. Sign Up {#sign-up}
 
 Create your MailSage account to get your API keys.
 
-### 2. Add SMTP Configuration
+### 2. Add SMTP Configuration {#add-smtp}
 
 Configure your SMTP provider through our API:
 
@@ -32,7 +31,7 @@ curl -X POST https://api.mailsage.io/api/v1/smtp/configs \
   }'
 ```
 
-### 3. Send Your First Email
+### 3. Send Your First Email {#send-first-email}
 
 ```bash
 curl -X POST https://api.mailsage.io/api/v1/emails/send \
@@ -45,9 +44,9 @@ curl -X POST https://api.mailsage.io/api/v1/emails/send \
   }'
 ```
 
-## Integration Examples
+## Integration Examples {#integration-examples}
 
-### Python
+### Python {#python}
 
 ```python
 import requests
@@ -71,7 +70,7 @@ def send_email(to, subject, body):
     return response.json()
 ```
 
-### JavaScript/Node.js
+### JavaScript/Node.js {#javascript-nodejs}
 
 ```javascript
 const axios = require('axios');
@@ -105,7 +104,7 @@ async function sendEmail(to, subject, body) {
 }
 ```
 
-## Next Steps
+## Next Steps {#next-steps}
 
 1. Explore the [API Reference](/api-reference/authentication) for detailed endpoints
 2. Learn about [Template Management](/guides/template-variables)

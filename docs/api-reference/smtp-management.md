@@ -1,20 +1,19 @@
 ---
 title: SMTP Management
 category: API Reference
-order: 2
+category_order: 2
+order: 5
 ---
 
-# SMTP Management
+Manage your SMTP configurations through the MailSage Dashboard or API.
 
-Manage your SMTP configurations through the MailSage API.
-
-## Add SMTP Configuration
+## Add SMTP Configuration {#add-smtp-configuration}
 
 Create a new SMTP configuration for sending emails.
 
 ### Endpoint
 
-<ApiEndpoint method="POST" url="/api/v1/smtp/configs" />
+**POST** `/api/v1/smtp/configs`
 
 ### Request Body
 
@@ -66,13 +65,13 @@ Create a new SMTP configuration for sending emails.
 | 403 | forbidden | Insufficient permissions |
 | 429 | rate_limit | Rate limit exceeded |
 
-## List SMTP Configurations
+## List SMTP Configurations {#list-smtp-configurations}
 
 Retrieve all SMTP configurations for your account.
 
 ### Endpoint
 
-<ApiEndpoint method="GET" url="/api/v1/smtp/configs" />
+**GET** `/api/v1/smtp/configs`
 
 ### Query Parameters
 
@@ -105,13 +104,13 @@ Retrieve all SMTP configurations for your account.
 }
 ```
 
-## Update SMTP Configuration
+## Update SMTP Configuration {#update-smtp-configuration}
 
 Update an existing SMTP configuration.
 
 ### Endpoint
 
-<ApiEndpoint method="PUT" url="/api/v1/smtp/configs/:id" />
+**PUT** `/api/v1/smtp/configs/:id`
 
 ### URL Parameters
 
@@ -145,13 +144,13 @@ Same fields as Add SMTP Configuration, all optional.
 }
 ```
 
-## Delete SMTP Configuration
+## Delete SMTP Configuration {#delete-smtp-configuration}
 
 Delete an SMTP configuration.
 
 ### Endpoint
 
-<ApiEndpoint method="DELETE" url="/api/v1/smtp/configs/:id" />
+**DELETE** `/api/v1/smtp/configs/:id`
 
 ### URL Parameters
 
@@ -167,13 +166,13 @@ Delete an SMTP configuration.
 }
 ```
 
-## Test SMTP Configuration
+## Test SMTP Configuration {#test-smtp-configuration}
 
 Test an SMTP configuration by sending a test email.
 
 ### Endpoint
 
-<ApiEndpoint method="POST" url="/api/v1/smtp/configs/:id/test" />
+**POST** `/api/v1/smtp/configs/:id/test`
 
 ### URL Parameters
 

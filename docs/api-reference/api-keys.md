@@ -1,14 +1,14 @@
 ---
-title: API Key Management
+title: API Keys
 category: API Reference
+category_order: 2
 order: 2
 ---
 
-# API Key Management
 
 MailSage uses API keys to authenticate requests to the API. Each API key is associated with a user account and can have specific permissions and restrictions.
 
-## Overview
+## Overview {#overview}
 
 - API keys are the primary method for authenticating with the MailSage API
 - Two types of keys: `live` and `test`
@@ -16,7 +16,7 @@ MailSage uses API keys to authenticate requests to the API. Each API key is asso
 - Optional expiration dates for enhanced security
 - Rate limiting and usage tracking included
 
-## Security Best Practices
+## Security Best Practices {#security-best-practices}
 
 1. **Key Storage**
    - Never expose API keys in client-side code
@@ -33,26 +33,24 @@ MailSage uses API keys to authenticate requests to the API. Each API key is asso
    - Use different keys for different services/environments
    - Regularly audit key permissions and usage
 
-## API Reference
+## API Reference {#api-reference}
 
-### Create API Key
+### Create API Key {#create-api-key}
 
 Create a new API key for accessing the MailSage API.
 
 #### Endpoint
 
-```http
-POST /api/v1/api-keys
-```
+**POST** `/api/v1/api-keys`
 
-#### Headers
+#### Headers {#headers}
 
 ```http
 Authorization: Bearer YOUR_JWT_TOKEN
 Content-Type: application/json
 ```
 
-#### Request Body
+#### Request Body {#request-body}
 
 ```json
 {
@@ -63,7 +61,7 @@ Content-Type: application/json
 }
 ```
 
-#### Response
+#### Response {#response}
 
 ```json
 {
@@ -82,7 +80,7 @@ Content-Type: application/json
 }
 ```
 
-#### Available Permissions
+#### Available Permissions {#available-permissions}
 
 | Permission | Description |
 |------------|-------------|
@@ -92,7 +90,7 @@ Content-Type: application/json
 | `view_analytics` | Access email analytics |
 | `webhook_management` | Manage webhook configurations |
 
-### List API Keys
+### List API Keys {#list-api-keys}
 
 Retrieve all active API keys for your account.
 
@@ -123,7 +121,7 @@ GET /api/v1/api-keys
 }
 ```
 
-### Revoke API Key
+### Revoke API Key {#revoke-api-key}
 
 Revoke an existing API key. This action cannot be undone.
 
@@ -141,7 +139,7 @@ DELETE /api/v1/api-keys/{key_id}
 }
 ```
 
-### Get API Key Usage
+### Get API Key Usage {#get-api-key-usage}
 
 Get detailed usage statistics for an API key.
 
@@ -175,7 +173,7 @@ GET /api/v1/api-keys/{key_id}/usage?days=30
 }
 ```
 
-## Rate Limiting and Quotas
+## Rate Limiting and Quotas {#rate-limiting-and-quotas}
 
 - Rate limits are applied per API key
 - Default rate: 100 requests per minute
@@ -185,9 +183,9 @@ GET /api/v1/api-keys/{key_id}/usage?days=30
   - `X-RateLimit-Remaining`: Remaining requests in the current window
   - `X-RateLimit-Reset`: Time when the rate limit resets
 
-## Code Examples
+## Code Examples {#code-examples}
 
-### Python
+### Python {#python}
 
 ```python
 import requests
@@ -228,7 +226,7 @@ class MailSageClient:
         return response.json()
 ```
 
-### JavaScript
+### JavaScript {#javascript}
 
 ```javascript
 class MailSageClient {
@@ -271,9 +269,9 @@ class MailSageClient {
 }
 ```
 
-## Troubleshooting
+## Troubleshooting {#troubleshooting}
 
-### Common Issues
+### Common Issues {#common-issues}
 
 1. **Invalid API Key**
    - Check if the key is active and not expired
@@ -290,7 +288,7 @@ class MailSageClient {
    - Check if the key has expired
    - Ensure the key hasn't been revoked
 
-### Error Codes
+### Error Codes {#error-codes}
 
 | Code | Description | Solution |
 |------|-------------|----------|
@@ -299,7 +297,7 @@ class MailSageClient {
 | 429 | Rate limit exceeded | Implement backoff strategy |
 | 404 | API key not found | Check the key ID is correct |
 
-## Support
+## Support {#support}
 
 If you encounter any issues or need assistance:
 

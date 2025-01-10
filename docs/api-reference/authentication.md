@@ -1,16 +1,15 @@
 ---
 title: API Authentication
 category: API Reference
+category_order: 2
 order: 1
 ---
 
-# API Authentication
-
 MailSage uses API keys to authenticate requests. You must include your API key in all API requests to our server.
 
-## API Keys
+## API Keys {#api-keys}
 
-### Overview
+### Overview {#overview}
 
 API keys are unique identifiers that authenticate your requests to the MailSage API. Each key:
 
@@ -19,7 +18,7 @@ API keys are unique identifiers that authenticate your requests to the MailSage 
 - Can be revoked at any time
 - Should be kept secure and private
 
-### Key Types
+### Key Types {#key-types}
 
 1. **Live Keys**
    - Format: `ms_live_xxxxxxxxxxxxxxxxxxxx`
@@ -33,7 +32,7 @@ API keys are unique identifiers that authenticate your requests to the MailSage 
    - No actual emails are sent
    - Higher rate limits for testing
 
-## Using Your API Key
+## Using Your API Key {#using-your-api-key}
 
 ### Request Headers
 
@@ -100,9 +99,9 @@ def send_email(data):
     return response.json()
 ```
 
-## Managing API Keys
+## Managing API Keys {#managing-api-keys}
 
-### Creating API Keys
+### Creating API Keys {#creating-api-keys}
 
 1. Log in to your [MailSage Dashboard](https://dashboard.mailsage.io)
 2. Navigate to Settings → API Keys
@@ -138,9 +137,9 @@ def send_email(data):
    - Set up alerts for unusual activity
    - Review access logs regularly
 
-## Error Handling
+## Error Handling {#error-handling}
 
-### Authentication Errors
+### Authentication Errors {#authentication-errors}
 
 | Status Code | Description | Solution |
 |------------|-------------|-----------|
@@ -158,7 +157,7 @@ Example error response:
 }
 ```
 
-### Rate Limiting
+### Rate Limiting {#rate-limiting}
 
 Rate limits are based on your plan:
 
@@ -187,7 +186,7 @@ async function withRetry(fn, maxRetries = 3) {
 }
 ```
 
-## Support
+## Support {#support}
 
 If you encounter authentication issues:
 

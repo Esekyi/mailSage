@@ -1,8 +1,13 @@
-# Sending Emails
+---
+title: Sending Emails
+category: API Reference
+category_order: 2
+order: 4
+---
 
 The MailSage API provides endpoints for sending both single and batch emails. All endpoints require API key authentication.
 
-## Single Email Sending
+## Single Email Sending {#single-email-sending}
 
 Send a single email with optional template and variable support.
 
@@ -145,7 +150,7 @@ POST /api/v1/emails/batch
 }
 ```
 
-## Job Control
+## Job Control {#job-control}
 
 Control and monitor email sending jobs.
 
@@ -187,7 +192,7 @@ Request body:
 }
 ```
 
-## Error Handling
+## Error Handling {#error-handling}
 
 The API uses standard HTTP response codes:
 
