@@ -62,9 +62,33 @@ class ApiKey(BaseModel, AuditMixin, SerializationMixin):
         """Generate a new API key, prefix, and hash."""
         # prefix is the first 8 characters of the key includes test or live
         prefix = secrets.token_hex(4)  # 8 characters
-        key = f"ms_{prefix}_{secrets.token_urlsafe(32)}"
+        # Generate random part using base64 for URL safety
+        random_part = secrets.token_urlsafe(32)
+        key = f"ms_{prefix}_{random_part}"  # Format: ms_<prefix>_<random>
         key_hash = cls.hash_key(key)
         return key, prefix, key_hash
+
+    @staticmethod
+    def validate_key_format(key: str) -> bool:
+        """Validate the format of an API key.
+        Format: ms_<prefix>_<random>
+        Only validates the prefix format (ms_<8_hex_chars>_)
+        """
+        if not key.startswith("ms_"):
+            return False
+
+        # Split should have at least 3 parts
+        parts = key.split('_', 2)
+        if len(parts) < 3:
+            return False
+
+        # Validate prefix is 8 hex characters
+        prefix = parts[1]
+        try:
+            int(prefix, 16)  # Validate hex format
+            return len(prefix) == 8
+        except ValueError:
+            return False
 
     @staticmethod
     def hash_key(key: str) -> str:
@@ -75,6 +99,12 @@ class ApiKey(BaseModel, AuditMixin, SerializationMixin):
     def verify_key(self, key: str) -> bool:
         """Verify an API key."""
         from werkzeug.security import check_password_hash
+
+        # First validate the key format
+        if not self.validate_key_format(key):
+            return False
+
+        # Then check the hash
         return check_password_hash(self.key_hash, key)
 
     def has_permission(self, permission: ApiKeyPermission) -> bool:
