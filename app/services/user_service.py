@@ -193,19 +193,13 @@ class UserService:
             template = Template.query.filter_by(
                 id=template_id,
                 user_id=user_id
-                # Must be soft-deleted first
             ).filter(Template.deleted_at.is_not(None)).first()
 
             if not template:
                 return False, "Template not found or not in deleted state"
 
-            # If this is a base template, get all its versions
-            templates_to_delete = [template]
-            if template.base_template_id is None:
-                versions = Template.query.filter_by(
-                    base_template_id=template.id
-                ).all()
-                templates_to_delete.extend(versions)
+            # Get version count for notification
+            version_count = len(template.versions)
 
             # Add notification before deletion
             user = User.query.get(user_id)
@@ -217,15 +211,16 @@ class UserService:
                 category="template",
                 meta_data={
                     "template_name": template.name,
-                    "deleted_versions": len(templates_to_delete) - 1
+                    "template_id": template.id,
+                    "final_version": template.version,
+                    "versions_deleted": version_count + 1  # Include current version
                 }
             )
 
-            # Perform deletion
-            for t in templates_to_delete:
-                db.session.delete(t)
-
+            # Delete template (will cascade delete versions due to relationship)
+            db.session.delete(template)
             db.session.commit()
+
             return True, None
 
         except Exception as e:
@@ -282,6 +277,7 @@ class UserService:
             if confirmation_text != "PERMANENT DELETE ALL TEMPLATES":
                 return False, "Invalid confirmation text. Please type 'PERMANENT DELETE ALL TEMPLATES' to confirm."
 
+            # Get all soft-deleted templates
             deleted_templates = Template.query.filter_by(
                 user_id=user_id
             ).filter(Template.deleted_at.is_not(None)).all()
@@ -289,20 +285,27 @@ class UserService:
             if not deleted_templates:
                 return False, "No deleted templates found"
 
-            count = len(deleted_templates)
+            # Count total versions for all templates
+            total_versions = 0
+            for template in deleted_templates:
+                # Add 1 for current version
+                total_versions += len(template.versions) + 1
 
             # Add notification before deletion
             user = User.query.get(user_id)
             user.add_notification(
                 title="All Deleted Templates Removed",
-                message=f"{
-                    count} deleted templates have been permanently removed",
+                message=f"{len(deleted_templates)} templates with {
+                    total_versions} total versions have been permanently removed",
                 type="critical",
                 category="template",
-                meta_data={"templates_count": count}
+                meta_data={
+                    "templates_count": len(deleted_templates),
+                    "total_versions": total_versions
+                }
             )
 
-            # Perform deletion
+            # Delete all templates (versions will cascade delete)
             for template in deleted_templates:
                 db.session.delete(template)
 
