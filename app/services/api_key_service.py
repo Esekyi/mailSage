@@ -84,12 +84,12 @@ class ApiKeyService:
             Tuple of (ApiKey object if valid, error message if invalid)
         """
         try:
-            # Extract prefix
-            parts = key.split('_')
-            if len(parts) != 3 or parts[0] != 'ms':
+            # First validate the key format
+            if not ApiKey.validate_key_format(key):
                 return None, "Invalid API key format"
 
-            prefix = parts[1]
+            # Extract prefix from ms_<prefix>_<random>
+            prefix = key.split('_', 2)[1]
 
             # Find key by prefix
             api_key = ApiKey.query.filter_by(
