@@ -2,15 +2,13 @@ from flask import Flask
 from flask_cors import CORS
 from app.extensions import db, migrate, redis_client
 from app.config import DevConfig
-from app.tasks.celery_app import create_celery_app
+from app. celery_factory import init_celery
 from app.tasks.schedule import CELERY_CONFIG
 from flask_jwt_extended import JWTManager
 from app.utils.logging import setup_logger
 from app.utils.error_handlers import register_error_handlers
 import logging
 
-# Create celery instance first
-celery = create_celery_app()
 
 def create_app(config_class=DevConfig):
     """Create and configure the app factory to flask app"""
@@ -65,9 +63,7 @@ def create_app(config_class=DevConfig):
     )
 
     # Initialize Celery
-    global celery
-    celery = create_celery_app(app)
-    celery.conf.update(CELERY_CONFIG)
+    init_celery(app)
 
     # Register blueprints for internal routes
     from app.api.internal import (
