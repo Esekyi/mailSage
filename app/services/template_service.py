@@ -1,7 +1,7 @@
 from typing import Dict, Optional, Tuple, List, Set, Any
 from sqlalchemy.exc import SQLAlchemyError
 from app.extensions import db
-from app.models import Template, TemplateStats, User, TemplateVersion
+from app.models import Template, TemplateStats, User, TemplateVersion, EmailJob
 from app.services.search_service import TemplateSearchService
 from app.utils.logging import logger
 from datetime import datetime, timezone
@@ -389,6 +389,16 @@ class TemplateService:
                 logger.warning(
                     f"Template {template_id} not found or already deleted")
                 return False, "Template not found"
+
+            # Check for linked email jobs
+            linked_jobs = db.session.query(EmailJob).filter(
+                EmailJob.template_id == template_id,
+                EmailJob.status.in_(
+                    [EmailJob.STATUS_PENDING, EmailJob.STATUS_PROCESSING])
+            ).count()
+
+            if linked_jobs > 0:
+                return False, f"Cannot delete template: {linked_jobs} active email jobs are using this template. Please wait for these jobs to complete before deleting."
 
             now = datetime.now(timezone.utc)
 
