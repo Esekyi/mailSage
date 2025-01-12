@@ -187,7 +187,9 @@ class JobControlService:
             EmailJob.status.in_(['pending', 'processing', 'paused'])
         ).all()
 
-        return [JobControlService.get_job_progress(job.id, user_id) for job in active_jobs]
+        job_control = JobControlService()
+
+        return [job_control.get_job_progress(job.id, user_id) for job in active_jobs]
 
     @staticmethod
     def cleanup_stale_jobs() -> int:

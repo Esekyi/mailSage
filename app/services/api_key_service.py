@@ -4,6 +4,7 @@ from app.extensions import db
 from app.models.api_key import ApiKey, ApiKeyType, ApiKeyPermission, ApiKeyUsage
 from app.utils.logging import logger
 from app.models.user import User
+from app.utils.roles import ROLE_CONFIGURATIONS, ResourceLimit
 
 
 class ApiKeyService:
@@ -182,31 +183,44 @@ class ApiKeyService:
             Tuple of (usage stats dict, error message if any)
         """
         try:
-            api_key = ApiKey.query.filter_by(
-                id=key_id,
-                user_id=user_id
-            ).first()
+            # Get API key with a fresh query to ensure we have latest data
+            api_key = db.session.query(ApiKey).filter(
+                ApiKey.id == key_id,
+                ApiKey.user_id == user_id,
+                ApiKey.is_active == True
+            ).with_for_update().first()
 
             if not api_key:
                 return None, "API key not found"
+
+            # Get user to determine role and limits
+            user = User.query.get(user_id)
+            if not user:
+                return None, "User not found"
+
+            # Get daily request limit from role configuration
+            daily_limit = ROLE_CONFIGURATIONS[user.role]['limits'][
+                ResourceLimit.DAILY_API_KEY_USAGE.value]
+            if daily_limit == -1:  # -1 means unlimited
+                daily_limit = float('inf')
 
             # Calculate date range
             end_date = datetime.now(timezone.utc)
             start_date = end_date - timedelta(days=days)
 
-            # Get usage logs
-            usage_logs = ApiKeyUsage.query.filter(
+            # Get usage logs with explicit join
+            usage_logs = db.session.query(ApiKeyUsage).filter(
                 ApiKeyUsage.api_key_id == key_id,
                 ApiKeyUsage.timestamp >= start_date,
-                ApiKeyUsage.timestamp <= end_date
-            ).all()
+                ApiKeyUsage.timestamp <= end_date,
+            ).order_by(ApiKeyUsage.timestamp.desc()).all()
 
             # Calculate statistics
             total_requests = len(usage_logs)
-            success_requests = len(
-                [log for log in usage_logs if 200 <= log.status_code < 300])
-            error_requests = len(
-                [log for log in usage_logs if log.status_code >= 400])
+            success_requests = sum(
+                1 for log in usage_logs if 200 <= log.status_code < 300)
+            error_requests = sum(
+                1 for log in usage_logs if log.status_code >= 400)
 
             # Group by endpoint
             endpoint_usage = {}
@@ -214,18 +228,35 @@ class ApiKeyService:
                 endpoint_usage[log.endpoint] = endpoint_usage.get(
                     log.endpoint, 0) + 1
 
+            # Calculate daily average and success rate
+            daily_average = round(total_requests / days, 2) if days > 0 else 0
+            success_rate = round(
+                (success_requests / total_requests * 100), 2) if total_requests > 0 else 0
+
+            # Refresh the API key to get latest daily_requests
+            db.session.refresh(api_key)
+
             return {
                 "total_requests": total_requests,
                 "success_requests": success_requests,
                 "error_requests": error_requests,
-                "success_rate": (success_requests / total_requests * 100) if total_requests > 0 else 0,
+                "success_rate": success_rate,
                 "endpoint_usage": endpoint_usage,
-                "daily_average": total_requests / days if days > 0 else 0
+                "daily_average": daily_average,
+                "current_daily_requests": api_key.daily_requests,
+                "daily_limit": daily_limit,
+                "daily_remaining": daily_limit - api_key.daily_requests if daily_limit != float('inf') else None,
+                "last_used_at": api_key.last_used_at.isoformat() if api_key.last_used_at else None,
+                "days_analyzed": days
             }, None
 
         except Exception as e:
-            logger.error(f"Error getting API key usage: {str(e)}")
-            return None, "Failed to get API key usage"
+            logger.error(
+                f"Error getting API key usage - Key ID: {
+                    key_id}, User ID: {user_id}, Error: {str(e)}",
+                exc_info=True
+            )
+            return None, f"Failed to get API key usage: {str(e)}"
 
     @staticmethod
     def cleanup_expired_keys():

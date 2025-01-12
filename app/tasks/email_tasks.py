@@ -231,14 +231,14 @@ def process_email_batch(self, job_id: int, batch_size: int = 50) -> Dict[str, An
                 webhook_service = WebhookService()
                 webhook_service.notify_job_status(job_id, 'started')
 
-            # Get pending deliveries for this batch
-            deliveries = EmailDelivery.query.filter(
+            # Check if all deliveries are already processed
+            pending_count = EmailDelivery.query.filter(
                 EmailDelivery.job_id == job_id,
                 EmailDelivery.status == EmailDelivery.STATUS_PENDING
-            ).limit(batch_size).all()
+            ).count()
 
-            if not deliveries:
-                # No more pending deliveries, mark job as completed
+            if pending_count == 0:
+                # All deliveries are processed, update job status
                 job.status = EmailJob.STATUS_COMPLETED
                 job.completed_at = datetime.now(timezone.utc)
                 db.session.commit()
@@ -253,6 +253,12 @@ def process_email_batch(self, job_id: int, batch_size: int = 50) -> Dict[str, An
                     "success_count": job.success_count,
                     "failure_count": job.failure_count
                 }
+
+            # Get pending deliveries for this batch
+            deliveries = EmailDelivery.query.filter(
+                EmailDelivery.job_id == job_id,
+                EmailDelivery.status == EmailDelivery.STATUS_PENDING
+            ).limit(batch_size).all()
 
             # Process each delivery
             template_service = TemplateService()
@@ -320,24 +326,41 @@ def process_email_batch(self, job_id: int, batch_size: int = 50) -> Dict[str, An
                     delivery.last_attempt = datetime.now(timezone.utc)
                     delivery.attempts += 1
                     job.failure_count += 1
-
                     db.session.commit()
                     webhook_service.notify_delivery_status(delivery.id, 'failed')
 
-            # Chain to next batch if there are more pending deliveries
+            # Check remaining deliveries after processing batch
             remaining = EmailDelivery.query.filter_by(
                 job_id=job_id,
                 status=EmailDelivery.STATUS_PENDING
             ).count()
 
-            if remaining > 0:
+            if remaining == 0:
+                # All deliveries processed, update job status
+                job.status = EmailJob.STATUS_COMPLETED
+                job.completed_at = datetime.now(timezone.utc)
+                db.session.commit()
+
+                # Notify completion via webhook
+                webhook_service.notify_job_status(job_id, 'completed')
+
+                return {
+                    "status": "completed",
+                    "job_id": job_id,
+                    "success_count": job.success_count,
+                    "failure_count": job.failure_count
+                }
+            else:
+                # More deliveries to process, chain to next batch
                 process_email_batch.delay(job_id, batch_size)
 
             return {
                 "status": "processing",
                 "job_id": job_id,
                 "batch_processed": len(deliveries),
-                "remaining": remaining
+                "remaining": remaining,
+                "success_count": job.success_count,
+                "failure_count": job.failure_count
             }
 
         except Exception as e:

@@ -6,7 +6,6 @@ from app.models import User, EmailJob
 from app.utils.roles import Permission, ResourceLimit, ROLE_CONFIGURATIONS
 from typing import Union, List
 from datetime import datetime, timezone
-from flask import current_app
 from app.services.api_key_service import ApiKeyService
 
 
@@ -41,7 +40,26 @@ def require_api_key(f):
         # Add key to request for usage tracking
         request.api_key = api_key
 
-        return f(*args, **kwargs)
+        # Execute the route function
+        response = f(*args, **kwargs)
+
+        # Track API key usage after successful execution
+        try:
+            status_code = response[1] if isinstance(response, tuple) else 200
+
+            # Ensure we have a fresh instance of the API key
+            api_key = db.session.merge(api_key)
+
+            # Start a new transaction for usage tracking
+            db.session.begin_nested()
+            api_key.track_usage(request.path, status_code)
+            db.session.flush()  # Flush changes before commit
+
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+
+        return response
     return decorated_function
 
 
@@ -148,10 +166,6 @@ def check_resource_limits(resource_type: ResourceLimit):
                 limit = ROLE_CONFIGURATIONS[user.role]['limits'][
                     resource_type.value]
             except KeyError:
-                current_app.logger.error(
-                    f"No limit configuration found for role {
-                        user.role} and resource {resource_type.value}"
-                )
                 return jsonify({
                     "error": "Resource limit configuration not found"
                 }), 500
