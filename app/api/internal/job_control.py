@@ -22,7 +22,10 @@ def get_job_status(job_id: int):
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
-        progress = JobControlService.get_job_progress(job_id)
+        user_id = get_jwt_identity()
+        job_control = JobControlService()
+
+        progress = job_control.get_job_progress(job_id, user_id)
         return jsonify(progress), 200
 
     except Exception as e:
@@ -35,16 +38,17 @@ def get_job_status(job_id: int):
 def pause_job(job_id: int):
     """Pause an ongoing email job."""
     try:
+        user_id = get_jwt_identity()
         # Verify job belongs to user
         job = EmailJob.query.filter_by(
             id=job_id,
-            user_id=get_jwt_identity()
+            user_id=user_id
         ).first()
 
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
-        if JobControlService.pause_job(job_id):
+        if JobControlService.pause_job(job_id, user_id):
             return jsonify({"message": "Job paused successfully"}), 200
         return jsonify({"error": "Failed to pause job"}), 400
 
@@ -58,16 +62,17 @@ def pause_job(job_id: int):
 def resume_job(job_id: int):
     """Resume a paused email job."""
     try:
+        user_id = get_jwt_identity()
         # Verify job belongs to user
         job = EmailJob.query.filter_by(
             id=job_id,
-            user_id=get_jwt_identity()
+            user_id=user_id
         ).first()
 
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
-        if JobControlService.resume_job(job_id):
+        if JobControlService.resume_job(job_id, user_id):
             return jsonify({"message": "Job resumed successfully"}), 200
         return jsonify({"error": "Failed to resume job"}), 400
 
@@ -81,17 +86,18 @@ def resume_job(job_id: int):
 def stop_job(job_id: int):
     """Stop an email job."""
     try:
+        user_id = get_jwt_identity()
         # Verify job belongs to user
         job = EmailJob.query.filter_by(
             id=job_id,
-            user_id=get_jwt_identity()
+            user_id=user_id
         ).first()
 
         if not job:
             return jsonify({"error": "Job not found"}), 404
 
         reason = request.json.get('reason', 'user_requested')
-        if JobControlService.stop_job(job_id, reason):
+        if JobControlService.stop_job(job_id, user_id, reason):
             return jsonify({"message": "Job stopped successfully"}), 200
         return jsonify({"error": "Failed to stop job"}), 400
 
@@ -104,7 +110,8 @@ def stop_job(job_id: int):
 def get_active_jobs():
     """Get all active jobs for the user."""
     try:
-        active_jobs = JobControlService.get_active_jobs(get_jwt_identity())
+        user_id = get_jwt_identity()
+        active_jobs = JobControlService.get_active_jobs(user_id)
         return jsonify(active_jobs), 200
 
     except Exception as e:

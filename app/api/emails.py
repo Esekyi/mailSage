@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any
 from app.utils.decorators import require_api_key
 from app.services.mail_service import MailService
 from app.services.template_service import TemplateRenderService

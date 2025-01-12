@@ -4,6 +4,7 @@ from app.extensions import db
 from app.utils.db import JSONBType
 from app.models.base import BaseModel, AuditMixin
 from app.models.mixins import SerializationMixin
+from flask import current_app
 
 import secrets
 import enum
@@ -113,28 +114,32 @@ class ApiKey(BaseModel, AuditMixin, SerializationMixin):
 
     def track_usage(self, endpoint: str, status_code: int):
         """Track API key usage."""
-        self.last_used_at = datetime.now(timezone.utc)
-
-        # Reset daily counter if needed
-        today = datetime.now(timezone.utc).date()
-        if self.last_reset_date != today:
-            self.daily_requests = 0
-            self.last_reset_date = today
-
-        self.daily_requests += 1
-
-        # Create usage log
-        usage = ApiKeyUsage(
-            api_key_id=self.id,
-            endpoint=endpoint,
-            status_code=status_code
-        )
-        db.session.add(usage)
-
         try:
-            db.session.commit()
+            # Update last used timestamp
+            self.last_used_at = datetime.now(timezone.utc)
+
+            # Reset daily counter if needed
+            today = datetime.now(timezone.utc).date()
+            if self.last_reset_date != today:
+                self.daily_requests = 0
+                self.last_reset_date = today
+
+            # Increment daily requests
+            self.daily_requests += 1
+            # Create usage log
+            usage = ApiKeyUsage(
+                api_key_id=self.id,
+                endpoint=endpoint,
+                status_code=status_code
+            )
+            db.session.add(usage)
+
+            # Add the API key updates to the session
+            db.session.add(self)
+
         except Exception as e:
-            db.session.rollback()
+            current_app.logger.error(f"Error tracking API key usage - API Key ID: {self.id}, "
+                                     f"Endpoint: {endpoint}, Status: {status_code}, Error: {str(e)}")
             raise e
 
     def revoke(self):
