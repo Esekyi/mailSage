@@ -195,7 +195,10 @@ def get_api_key_usage(key_id: int):
                 "/api/v1/emails/send": 1000,
                 "/api/v1/emails/batch": 500
             },
-            "daily_average": 50
+            "daily_average": 50,
+            "current_daily_requests": 100,
+            "last_used_at": "2023-12-31T12:00:00Z",
+            "days_analyzed": 30
         }
     }
     ```

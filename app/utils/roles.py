@@ -32,6 +32,7 @@ class ResourceLimit(Enum):
     MAX_RECIPIENTS = "max_recipients"
     WEBHOOK_ENDPOINTS = "webhook_endpoints"
     SMTPCONFIGS = "smtp_configs"
+    DAILY_API_KEY_USAGE = "daily_api_key_usage"
 
 
 ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
@@ -52,6 +53,7 @@ ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
             ResourceLimit.MAX_RECIPIENTS.value: 100,  # per batch
             ResourceLimit.WEBHOOK_ENDPOINTS.value: 1,
             ResourceLimit.SMTPCONFIGS.value: 2,
+            ResourceLimit.DAILY_API_KEY_USAGE.value: 100,
         },
         'features': ['basic_templates', 'basic_analytics']
     },
@@ -76,6 +78,7 @@ ROLE_CONFIGURATIONS: Dict[str, Dict[str, Any]] = {
             ResourceLimit.MAX_RECIPIENTS.value: 1_000,  # per batch
             ResourceLimit.WEBHOOK_ENDPOINTS.value: 5,
             ResourceLimit.SMTPCONFIGS.value: 10,
+            ResourceLimit.DAILY_API_KEY_USAGE.value: 10_000,
         },
         'features': ['advanced_templates', 'advanced_analytics',
                      'priority_support']
